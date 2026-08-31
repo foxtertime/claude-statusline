@@ -43,4 +43,6 @@ else
     echo "Создан $SETTINGS"
 fi
 
+ver=$("$CLAUDE_DIR/statusline.sh" --version 2>/dev/null || echo "?")
+echo "Установлено: $ver"
 echo "Готово. Перезапустите Claude Code — statusline появится."

@@ -43,3 +43,21 @@ cd claude-statusline && git pull && ./install.sh
 
 - Обязательно: `bash`, `jq`, `bc`
 - Опционально: `git` (без него не отображается git-блок), GNU `date` (на macOS флаг `date -d` не работает — не будет времени сброса лимитов, остальное работает)
+
+## Версионирование
+
+[SemVer](https://semver.org/lang/ru/): релизы отмечаются git-тегами `vX.Y.Z`, история изменений — в [CHANGELOG.md](CHANGELOG.md).
+
+Проверить установленную версию:
+
+```bash
+~/.claude/statusline.sh --version
+```
+
+Порядок выпуска новой версии: поднять `VERSION` в `statusline.sh`, дописать раздел в `CHANGELOG.md`, затем:
+
+```bash
+git commit -am "vX.Y.Z: краткое описание"
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push && git push --tags
+```

@@ -5,6 +5,12 @@
 # Use C locale for numeric formatting (bc emits "." which printf rejects under ru_RU etc.)
 export LC_NUMERIC=C
 
+VERSION="1.0.0"
+if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-v" ]; then
+    echo "claude-statusline $VERSION"
+    exit 0
+fi
+
 input=$(cat)
 
 cwd=$(echo "$input"     | jq -r '.cwd // .workspace.current_dir // "?"')
