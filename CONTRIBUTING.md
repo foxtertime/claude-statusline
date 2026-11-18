@@ -72,9 +72,16 @@ git checkout develop
 git merge --no-ff release/X.Y.Z -m "Merge branch 'release/X.Y.Z' into develop"
 git branch -d release/X.Y.Z
 
-git push origin main develop vX.Y.Z
+git push origin main develop
+git push origin vX.Y.Z
 ```
 
-После пуша тега workflow `Release` проверяет, что тег совпадает с `VERSION`, и публикует релиз на GitHub с текстом из `CHANGELOG.md`.
+Тег пушится отдельной командой: при выпуске 1.1.0 ветки и тег ушли одним `git push`, и GitHub запустил workflow только для `main` ([#1](https://github.com/foxtertime/claude-statusline/issues/1)).
+
+После пуша тега workflow `Release` проверяет, что тег совпадает с `VERSION`, и публикует релиз на GitHub с текстом из `CHANGELOG.md`. Если он не запустился, его можно запустить вручную для уже существующего тега:
+
+```bash
+gh workflow run release.yml -f tag=vX.Y.Z
+```
 
 Hotfix выпускается так же, но ветка `hotfix/X.Y.Z` создаётся от `main`.

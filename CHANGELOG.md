@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-11-18
+
+Сам статуслайн и установщик не изменились.
+
+### Изменено
+- Workflow `Release` можно запустить вручную для существующего тега; если релиз уже опубликован, обновляется его описание.
+- Порядок выпуска: тег пушится отдельной командой после веток.
+- В `CLAUDE.md` закреплено ведение задач в GitHub Issues.
+
 ## [1.1.0] — 2026-11-18
 
 ### Добавлено
@@ -40,6 +49,7 @@
 - Установщик `install.sh`: копирует скрипт в `~/.claude/statusline.sh`, прописывает `statusLine` в `settings.json` с бэкапом; `git` — опциональная зависимость.
 - Флаг `--version` / `-v` у скрипта.
 
-[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/foxtertime/claude-statusline/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/foxtertime/claude-statusline/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/foxtertime/claude-statusline/releases/tag/v1.0.0
