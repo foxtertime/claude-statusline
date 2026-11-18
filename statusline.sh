@@ -26,6 +26,8 @@
 #   STATUSLINE_COLOR_<ROLE>  SGR code overriding one role, e.g. "1;34"
 #   STATUSLINE_ASCII      1 to draw with ASCII characters only
 #   STATUSLINE_PADDING    the statusLine.padding value from settings.json
+#   STATUSLINE_LAYOUT     order of line-2 segments, "/" starts a new line;
+#                         or "compact" for a single line
 
 set -u
 
@@ -101,6 +103,46 @@ if is_int "${COLUMNS:-}" && [ "$COLUMNS" -ge 20 ]; then
     [ "$MAX_WIDTH" -lt 10 ] && MAX_WIDTH=10
 fi
 
+# Layout. Line-2 segments in the order given; "/" moves the following ones to
+# a line of their own; segments not named follow in default order on the last
+# line; unknown names are ignored. "compact" prints a single line.
+LINE2_SEGMENTS="context cost cache vim session"
+COMPACT=0
+LAYOUT_GROUPS=("$LINE2_SEGMENTS")
+parse_layout() {
+    local spec=${STATUSLINE_LAYOUT:-} group name seen=" " groups=() list rest
+    [ -n "$spec" ] || return 0
+    if [ "$spec" = compact ]; then
+        COMPACT=1
+        return 0
+    fi
+    spec=${spec// /,}
+    while :; do
+        group=${spec%%/*}
+        list=""
+        for name in ${group//,/ }; do
+            case " $LINE2_SEGMENTS " in *" $name "*) ;; *) continue ;; esac
+            case $seen in *" $name "*) continue ;; esac
+            seen="${seen}${name} "
+            list="${list:+$list }$name"
+        done
+        [ -n "$list" ] && groups+=("$list")
+        [ "$group" = "$spec" ] && break
+        spec=${spec#*/}
+    done
+    rest=""
+    for name in $LINE2_SEGMENTS; do
+        case $seen in *" $name "*) ;; *) rest="${rest:+$rest }$name" ;; esac
+    done
+    if [ "${#groups[@]}" -eq 0 ]; then
+        groups=("$rest")
+    elif [ -n "$rest" ]; then
+        groups[${#groups[@]} - 1]="${groups[${#groups[@]} - 1]} $rest"
+    fi
+    LAYOUT_GROUPS=("${groups[@]}")
+}
+parse_layout
+
 # Segments: git commit pr links worktree effort fast agent context tokens cost
 #           cache vim session
 #           limits current weekly spend
@@ -121,11 +163,13 @@ if [ "$LANG_CODE" = ru ]; then
     L_FAST="быстро" L_CLEAN="[чисто]" L_NO_GIT="[нет git]"
     L_CURRENT="Сейчас" L_WEEKLY="Неделя" L_SPEND="Расход"
     L_APPROVED="одобрен" L_CHANGES="правки" L_PENDING="ждёт" L_DRAFT="черновик"
+    L_5H="5ч" L_7D="7д"
 else
     L_CTX="Ctx" L_CACHE="Cache" L_COLD="cold" L_WARM="warm"
     L_FAST="fast" L_CLEAN="[clean]" L_NO_GIT="[no git]"
     L_CURRENT="Current" L_WEEKLY="Weekly" L_SPEND="Spend"
     L_APPROVED="approved" L_CHANGES="changes" L_PENDING="pending" L_DRAFT="draft"
+    L_5H="5h" L_7D="7d"
 fi
 
 # Limit labels are padded to the longest one plus a space.
@@ -330,7 +374,7 @@ short_path() {
         tail="/${head##*/}${tail}"
         head=${head%/*}
     done
-    if [ -z "$head" ] || [ "$head" = "~" ]; then
+    if [ -z "$tail" ] || [ -z "$head" ] || [ "$head" = "~" ]; then
         REPLY=$1
     else
         REPLY="${G_ELLIPSIS}${tail}"
@@ -757,7 +801,7 @@ render_location() {
         short_path "$dir" $((level >= 3 ? 1 : 2))
         dir=$REPLY
     fi
-    if [ "$level" -ge 4 ]; then
+    if [ "$level" -ge 4 ] && [ "$overflow" -gt 0 ]; then
         local keep=$((${#branch} - overflow - 1))
         [ "$keep" -lt "$BRANCH_MIN" ] && keep=$BRANCH_MIN
         [ "$keep" -lt "${#branch}" ] && branch="${branch:0:keep}${G_ELLIPSIS}"
@@ -850,8 +894,9 @@ fit_location() {
     REPLY=$line
 }
 
-# join_fit — join SEGMENTS with the separator, dropping segments from the end
-# until the line fits MAX_WIDTH. The first segment always stays.
+# join_fit [use head forms] — join SEGMENTS with the separator, dropping
+# segments from the end until the line fits MAX_WIDTH. The first segment
+# always stays; on line 2 it may still shrink through HEAD_FORMS.
 join_fit() {
     local count=${#SEGMENTS[@]} line i
     while :; do
@@ -867,7 +912,7 @@ join_fit() {
         count=$((count - 1))
     done
     # Down to the first segment and still too wide: try its shorter forms.
-    if [ "$MAX_WIDTH" -gt 0 ] && [ "$count" -le 1 ]; then
+    if [ "${1:-0}" -eq 1 ] && [ "$MAX_WIDTH" -gt 0 ] && [ "$count" -le 1 ]; then
         for line in "${HEAD_FORMS[@]}"; do
             visible_len "$line"
             [ "$REPLY" -le "$MAX_WIDTH" ] && break
@@ -890,51 +935,102 @@ head_form() {
     REPLY=$out
 }
 
-# render_model — fills SEGMENTS for line 2, most important first
-render_model() {
-    local out
-    # The model segment always stays; on a very narrow terminal it sheds the
-    # agent, then fast mode, then effort.
+# render_heads — HEAD_FORMS: the model segment, then shorter forms of it. It
+# always stays; on a very narrow terminal it sheds the agent, then fast mode,
+# then effort.
+render_heads() {
     HEAD_FORMS=()
     head_form 1 1 1 && HEAD_FORMS+=("$REPLY")
     head_form 1 1 0 && HEAD_FORMS+=("$REPLY")
     head_form 1 0 0 && HEAD_FORMS+=("$REPLY")
     head_form 0 0 0 && HEAD_FORMS+=("$REPLY")
-    SEGMENTS=("${HEAD_FORMS[0]}")
+}
 
-    if [ -n "$ctx_pct" ] && shown context; then
-        bar "$ctx_pct"
-        out="${C_DIM}${L_CTX}${C_RESET} ${REPLY} ${C_TEXT}${ctx_pct}%"
-        if [ -n "$ctx_used" ] && [ -n "$ctx_size" ] && shown tokens; then
-            fmt_tokens "$ctx_used"
-            out="${out} (${REPLY} / "
-            fmt_tokens "$ctx_size"
-            out="${out}${REPLY})"
+# render_segment <name> — one line-2 segment in REPLY, empty when it has no
+# data or is hidden
+render_segment() {
+    local out
+    REPLY=""
+    case $1 in
+        context)
+            [ -n "$ctx_pct" ] && shown context || return 0
+            bar "$ctx_pct"
+            out="${C_DIM}${L_CTX}${C_RESET} ${REPLY} ${C_TEXT}${ctx_pct}%"
+            if [ -n "$ctx_used" ] && [ -n "$ctx_size" ] && shown tokens; then
+                fmt_tokens "$ctx_used"
+                out="${out} (${REPLY} / "
+                fmt_tokens "$ctx_size"
+                out="${out}${REPLY})"
+            fi
+            REPLY="${out}${C_RESET}"
+            ;;
+        cost)
+            shown cost && render_cost
+            ;;
+        cache)
+            [ -n "$cache_state" ] && shown cache && render_cache
+            ;;
+        vim)
+            [ -n "$vim_mode" ] && shown vim || return 0
+            local color=$C_GREEN_B
+            [ "$vim_mode" = NORMAL ] && color=$C_YELLOW_B
+            REPLY="${color}${vim_mode}${C_RESET}"
+            ;;
+        session)
+            [ -n "$session" ] && shown session || return 0
+            local name=$session
+            [ "${#name}" -gt "$SESSION_MAX" ] && name="${name:0:SESSION_MAX}${G_ELLIPSIS}"
+            REPLY="${C_DIM}${name}${C_RESET}"
+            ;;
+    esac
+    return 0
+}
+
+# render_lines — print line 2 and any extra layout lines
+render_lines() {
+    local g name
+    render_heads
+    for ((g = 0; g < ${#LAYOUT_GROUPS[@]}; g++)); do
+        if [ "$g" -eq 0 ]; then
+            SEGMENTS=("${HEAD_FORMS[0]}")
+        else
+            SEGMENTS=()
         fi
-        SEGMENTS+=("${out}${C_RESET}")
-    fi
+        for name in ${LAYOUT_GROUPS[g]}; do
+            render_segment "$name"
+            [ -n "$REPLY" ] && SEGMENTS+=("$REPLY")
+        done
+        [ "${#SEGMENTS[@]}" -gt 0 ] || continue
+        join_fit $((g == 0 ? 1 : 0))
+        printf '%s\n' "$REPLY"
+    done
+}
 
-    if shown cost; then
-        render_cost
-        [ -n "$REPLY" ] && SEGMENTS+=("$REPLY")
-    fi
+# compact_limit <label> <percent> — append "5h 34%" to SEGMENTS
+compact_limit() {
+    [ -n "$2" ] || return 0
+    level_color "$2"
+    SEGMENTS+=("${C_DIM}$1${C_RESET} ${REPLY}$2%${C_RESET}")
+}
 
-    if [ -n "$cache_state" ] && shown cache; then
-        render_cache
-        SEGMENTS+=("$REPLY")
+# render_compact — everything essential on one line: the shortest form of
+# the location (last path component, branch and working tree state) │ model
+# and effort │ context % │ limit percentages. Segments drop from the end.
+render_compact() {
+    render_location 6
+    SEGMENTS=("$REPLY")
+    head_form 1 0 0
+    SEGMENTS+=("$REPLY")
+    if [ -n "$ctx_pct" ] && shown context; then
+        level_color "$ctx_pct"
+        SEGMENTS+=("${C_DIM}${L_CTX}${C_RESET} ${REPLY}${ctx_pct}%${C_RESET}")
     fi
-
-    if [ -n "$vim_mode" ] && shown vim; then
-        local color=$C_GREEN_B
-        [ "$vim_mode" = NORMAL ] && color=$C_YELLOW_B
-        SEGMENTS+=("${color}${vim_mode}${C_RESET}")
+    if shown limits; then
+        if shown current; then compact_limit "$L_5H" "$five_pct"; fi
+        if shown weekly; then compact_limit "$L_7D" "$week_pct"; fi
+        if shown spend; then compact_limit "$L_SPEND" "$spend_pct"; fi
     fi
-
-    if [ -n "$session" ] && shown session; then
-        local name=$session
-        [ "${#name}" -gt "$SESSION_MAX" ] && name="${name:0:SESSION_MAX}${G_ELLIPSIS}"
-        SEGMENTS+=("${C_DIM}${name}${C_RESET}")
-    fi
+    join_fit 0
 }
 
 # render_cache — "Cache 91% · 19:30" while the prompt cache is warm (hit ratio
@@ -1041,11 +1137,15 @@ main() {
         read_git
     fi
 
+    if [ "$COMPACT" -eq 1 ]; then
+        render_compact
+        printf '%s\n' "$REPLY"
+        return 0
+    fi
+
     fit_location
     printf '%s\n' "$REPLY"
-    render_model
-    join_fit
-    printf '%s\n' "$REPLY"
+    render_lines
     shown limits || return 0
     if [ -n "$five_pct" ] && shown current; then
         fit_limit "$L_CURRENT" "$five_pct" "$five_reset"

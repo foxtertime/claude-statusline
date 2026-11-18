@@ -289,6 +289,10 @@ equals "$(line 1 "$(STATUSLINE_HIDE=commit render "$(in_dir "$REPO")")")" "$REPO
 
 # --- ширина терминала -------------------------------------------------------
 
+t "ширина: путь без / не превращается в многоточие"
+equals "$(line 1 "$(COLUMNS=20 render '{}')")" "? │ [no git]"
+equals "$(line 1 "$(COLUMNS=20 render '{"cwd":"relative"}')")" "relative │ [no git]"
+
 t "ширина: строка 1 упрощается по шагам"
 mkdir -p "$HOME/work/proj"
 git init -q -b main "$HOME/work/proj/app"
@@ -600,6 +604,52 @@ printf '%s\n' "$(date +%s)" "$REPO" main x 0 0 0 0 0 0 age subject >"$entry"
 equals "$(cached s1)" "$REPO │ main ?2"
 equals "$(cached '../../evil')" "$REPO │ main ?2"
 if [ -e "$TMP/evil" ] || [ -e "$XDG_CACHE_HOME/evil" ]; then fail "запись вне каталога кэша"; else ok; fi
+
+# --- раскладка --------------------------------------------------------------
+
+layout() { STATUSLINE_LAYOUT=$1 "$BASH" "$SCRIPT" --demo; }
+
+t "раскладка: по умолчанию вывод не меняется"
+equals "$(layout '')" "$(demo)"
+equals "$(layout 'context,cost,cache,vim,session')" "$(demo)"
+
+t "раскладка: порядок сегментов, неназванные — следом в обычном порядке"
+equals "$(line 2 "$(layout 'cache,context')" | sed 's/ │ /|/g' | cut -d'|' -f2-)" \
+    "$(line 2 "$(demo)" | sed 's/ │ /|/g' | awk -F'|' '{print $4 "|" $2 "|" $3 "|" $5 "|" $6}')"
+contains "$(line 2 "$(layout 'session')")" "@reviewer │ refactor auth middleware │ Ctx "
+
+t "раскладка: / переносит сегменты на отдельную строку перед лимитами"
+out=$(layout 'context,cost/cache,vim,session')
+equals "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "6"
+contains "$(line 2 "$out")" "62% (620K / 1M) │ 43m · +156 −23"
+lacks "$(line 2 "$out")" "Cache"
+equals "$(line 3 "$out" | cut -d'│' -f2-)" " NORMAL │ refactor auth middleware"
+contains "$(line 3 "$out")" "Cache 91%"
+contains "$(line 4 "$out")" "Current "
+equals "$(line 3 "$(layout 'context/cost')" | cut -c1-3)" "43m"
+
+t "раскладка: пустая отдельная строка не печатается, ширина соблюдается"
+out=$(STATUSLINE_HIDE=cache,vim,session layout 'context,cost/cache,vim,session')
+equals "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "5"
+out=$(COLUMNS=40 layout 'context/cost,cache,vim,session')
+contains "$(line 3 "$out")" "43m · +156 −23"
+lacks "$(line 3 "$out")" "refactor"
+
+t "раскладка: неизвестные имена и повторы игнорируются"
+equals "$(layout 'bogus,context/zzz')" "$(demo)"
+equals "$(layout 'context,context,cost')" "$(demo)"
+equals "$(layout '///')" "$(demo)"
+
+t "раскладка: compact — одна строка"
+out=$(layout compact)
+equals "$out" "…/app │ feature/auth +2 ~1 ?3 │ Opus 5.5 (1M) (high) │ Ctx 62% │ 5h 34% │ 7d 71% │ Spend 86%"
+equals "$(COLUMNS=66 layout compact)" "…/app │ feature/auth +2 ~1 ?3 │ Opus 5.5 (1M) (high) │ Ctx 62%"
+equals "$(COLUMNS=60 layout compact)" "…/app │ feature/auth +2 ~1 ?3 │ Opus 5.5 (1M) (high)"
+equals "$(STATUSLINE_HIDE=limits layout compact)" "…/app │ feature/auth +2 ~1 ?3 │ Opus 5.5 (1M) (high) │ Ctx 62%"
+equals "$(STATUSLINE_HIDE=weekly,git layout compact)" "…/app │ Opus 5.5 (1M) (high) │ Ctx 62% │ 5h 34% │ Spend 86%"
+equals "$(STATUSLINE_LANG=ru layout compact | cut -d'│' -f4-)" " Контекст 62% │ 5ч 34% │ 7д 71% │ Расход 86%"
+contains "$(NO_COLOR='' layout compact)" "${esc}[33m62%"
+equals "$(printf '{}' | STATUSLINE_LAYOUT=compact "$BASH" "$SCRIPT")" "? │ [no git] │ ?"
 
 # --- русский режим, цвета, ASCII --------------------------------------------
 
