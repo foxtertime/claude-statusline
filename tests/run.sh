@@ -4,6 +4,10 @@
 #
 # Скрипты запускаются тем же bash, что и тесты, поэтому
 # `/bin/bash tests/run.sh` на macOS проверяет совместимость с bash 3.2.
+#
+# JSON для тестов собирается через printf с форматом в одинарных кавычках.
+# Экранированные кавычки (\") внутри "$(...)" bash 3.2 разбирает иначе, чем
+# bash 4+, и скрипт получает невалидный JSON.
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -150,7 +154,7 @@ equals "$(render '{}' | wc -l | tr -d ' ')" "2"
 now=$(date +%s)
 now_hhmm=$(printf '%02d:%02d' $((now % 86400 / 3600)) $((now % 3600 / 60)))
 t "лимиты: время сброса сегодня и в другой день"
-out=$(render "{\"rate_limits\":{\"five_hour\":{\"used_percentage\":23.5,\"resets_at\":$now},\"seven_day\":{\"used_percentage\":81.2,\"resets_at\":1741635000}}}")
+out=$(render "$(printf '{"rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":%s},"seven_day":{"used_percentage":81.2,"resets_at":1741635000}}}' "$now")")
 equals "$(line 3 "$out")" "Current ━━━━━─────────────── 24%  $now_hhmm"
 equals "$(line 4 "$out")" "Weekly  ━━━━━━━━━━━━━━━━──── 81%  10 мар, 19:30"
 
@@ -176,7 +180,8 @@ equals "$(relative 20)" "Current ━──────────────�
 equals "$(relative -500)" "Current ━─────────────────── 5%  через <1 мин"
 equals "$(STATUSLINE_LANG=en relative 7830)" "Current ━─────────────────── 5%  in 2h 10m"
 equals "$(STATUSLINE_LANG=en relative 20)" "Current ━─────────────────── 5%  in <1m"
-equals "$(line 3 "$(STATUSLINE_RESET=bogus render "{\"rate_limits\":{\"five_hour\":{\"used_percentage\":5,\"resets_at\":$now}}}")")" "Current ━─────────────────── 5%  $now_hhmm"
+resets_now=$(printf '{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%s}}}' "$now")
+equals "$(line 3 "$(STATUSLINE_RESET=bogus render "$resets_now")")" "Current ━─────────────────── 5%  $now_hhmm"
 
 t "лимиты: seven_day_sonnet больше не выводится"
 lacks "$(render '{"rate_limits":{"seven_day_sonnet":{"used_percentage":8}}}')" "Sonnet"
@@ -272,7 +277,11 @@ contains "$(line 2 "$(COLUMNS=64 NO_COLOR='' render "$full")")" "100K / 200K"
 # --- стоимость сессии -------------------------------------------------------
 
 # cost_line <json-объект cost> [остальные поля]
-cost_line() { line 2 "$(render "{\"model\":{\"display_name\":\"M\"},\"cost\":$1${2:+,$2}}")"; }
+cost_line() {
+    local json
+    json=$(printf '{"model":{"display_name":"M"},"cost":%s%s}' "$1" "${2:+,$2}")
+    line 2 "$(render "$json")"
+}
 
 t "cost: стоимость, длительность, строки"
 equals "$(cost_line '{"total_cost_usd":1.2351,"total_duration_ms":2280000,"total_lines_added":156,"total_lines_removed":23}')" "M │ \$1.24 · 38 мин · +156 −23"
@@ -292,14 +301,20 @@ equals "$(cost_line '{"total_cost_usd":1.5,"total_duration_ms":60000}' '"rate_li
 # --- prompt cache -----------------------------------------------------------
 
 # cache_line <json-объект prompt_cache>
-cache_line() { line 2 "$(render "{\"model\":{\"display_name\":\"M\"},\"prompt_cache\":$1}")"; }
+cache_line() {
+    local json
+    json=$(printf '{"model":{"display_name":"M"},"prompt_cache":%s}' "$1")
+    line 2 "$(render "$json")"
+}
+# warm_until <epoch> — тёплый кэш с заданным временем остывания
+warm_until() { printf '{"caching_observed":true,"warm":true,"hit_ratio":0.914,"expires_at":%s}' "$1"; }
 
 t "cache: тёплый кэш — доля попаданий и время остывания"
-equals "$(cache_line "{\"caching_observed\":true,\"warm\":true,\"hit_ratio\":0.914,\"expires_at\":$now}")" "M │ Cache 91% · $now_hhmm"
+equals "$(cache_line "$(warm_until "$now")")" "M │ Cache 91% · $now_hhmm"
 equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":null,"expires_at":1741635000}')" "M │ Cache 10 мар, 19:30"
 equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":0.5,"expires_at":null}')" "M │ Cache 50%"
 equals "$(cache_line '{"caching_observed":true,"warm":true}')" "M │ Cache warm"
-equals "$(STATUSLINE_RESET=relative cache_line "{\"caching_observed\":true,\"warm\":true,\"hit_ratio\":1,\"expires_at\":$((now + 270))}")" "M │ Cache 100% · через 4 мин"
+equals "$(STATUSLINE_RESET=relative cache_line "$(warm_until $((now + 270)))")" "M │ Cache 91% · через 4 мин"
 
 t "cache: остывший кэш"
 equals "$(cache_line '{"caching_observed":true,"warm":false,"hit_ratio":0.9,"expires_at":null}')" "M │ Cache cold"
@@ -312,7 +327,11 @@ equals "$(STATUSLINE_HIDE=cache cache_line '{"caching_observed":true,"warm":true
 # --- индикаторы режимов -----------------------------------------------------
 
 # mode_line <поля json>
-mode_line() { line 2 "$(render "{\"model\":{\"display_name\":\"M\"},\"effort\":{\"level\":\"high\"},$1}")"; }
+mode_line() {
+    local json
+    json=$(printf '{"model":{"display_name":"M"},"effort":{"level":"high"},%s}' "$1")
+    line 2 "$(render "$json")"
+}
 
 t "режимы: fast, агент, vim, имя сессии"
 equals "$(mode_line '"fast_mode":true')" "M (high) fast"
@@ -334,9 +353,11 @@ equals "$(STATUSLINE_HIDE=vim,session mode_line "$all")" "M (high) fast @a"
 
 t "режимы: имя worktree рядом с веткой"
 new_repo wt
-equals "$(line 1 "$(STATUSLINE_HIDE=commit render "{\"workspace\":{\"current_dir\":\"$REPO\",\"git_worktree\":\"feature-xyz\"}}")")" "$REPO │ main [clean] wt:feature-xyz"
-contains "$(render "{\"workspace\":{\"current_dir\":\"$REPO\"},\"worktree\":{\"name\":\"my-feature\"}}")" "main [clean] wt:my-feature"
-lacks "$(STATUSLINE_HIDE=worktree render "{\"workspace\":{\"current_dir\":\"$REPO\",\"git_worktree\":\"x\"}}")" "wt:"
+git_wt=$(printf '{"workspace":{"current_dir":"%s","git_worktree":"feature-xyz"}}' "$REPO")
+session_wt=$(printf '{"workspace":{"current_dir":"%s"},"worktree":{"name":"my-feature"}}' "$REPO")
+equals "$(line 1 "$(STATUSLINE_HIDE=commit render "$git_wt")")" "$REPO │ main [clean] wt:feature-xyz"
+contains "$(render "$session_wt")" "main [clean] wt:my-feature"
+lacks "$(STATUSLINE_HIDE=worktree render "$git_wt")" "wt:"
 
 # --- ссылки на репозиторий --------------------------------------------------
 
@@ -454,12 +475,15 @@ contains "$(render "$(in_dir "$REPO")")" '│ fix \n 100%s \033[31m · '
 new_repo cached
 # cached <session_id> [каталог] — строка 1 при включённом кэше
 cached() {
-    line 1 "$(STATUSLINE_GIT_CACHE=60 STATUSLINE_HIDE=commit render "{\"session_id\":\"$1\",\"workspace\":{\"current_dir\":\"${2:-$REPO}\"}}")"
+    local json
+    json=$(printf '{"session_id":"%s","workspace":{"current_dir":"%s"}}' "$1" "${2:-$REPO}")
+    line 1 "$(STATUSLINE_GIT_CACHE=60 STATUSLINE_HIDE=commit render "$json")"
 }
+uncached=$(printf '{"session_id":"s1","workspace":{"current_dir":"%s"}}' "$REPO")
 entry="$XDG_CACHE_HOME/claude-statusline/git-s1"
 
 t "кэш git: выключен по умолчанию"
-render "{\"session_id\":\"s1\",\"workspace\":{\"current_dir\":\"$REPO\"}}" >/dev/null
+render "$uncached" >/dev/null
 if [ -e "$entry" ]; then fail "кэш создан без STATUSLINE_GIT_CACHE"; else ok; fi
 
 t "кэш git: повторный запуск берёт состояние из кэша"
@@ -470,7 +494,7 @@ equals "$(cached s1)" "$REPO │ main [clean]"
 t "кэш git: другая сессия, другой каталог, выключенный кэш — свежие данные"
 equals "$(cached s2)" "$REPO │ main ?1"
 equals "$(cached s1 "$TMP/plain")" "$TMP/plain │ [no git]"
-contains "$(render "{\"session_id\":\"s1\",\"workspace\":{\"current_dir\":\"$REPO\"}}")" "main ?1"
+contains "$(render "$uncached")" "main ?1"
 
 t "кэш git: запись устаревает по TTL"
 equals "$(cached s1)" "$REPO │ main ?1"
