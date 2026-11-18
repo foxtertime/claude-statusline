@@ -64,7 +64,7 @@ if is_int "${COLUMNS:-}" && [ "$COLUMNS" -ge 20 ]; then
     MAX_WIDTH=$((COLUMNS - WIDTH_MARGIN))
 fi
 
-# Segments: git commit effort context tokens limits current weekly spend
+# Segments: git commit pr links effort context tokens limits current weekly spend
 HIDE=",${STATUSLINE_HIDE:-},"
 HIDE=${HIDE// /,}
 
@@ -100,6 +100,13 @@ fi
 
 SEP="${C_DIM} │ ${C_RESET}"
 
+# OSC 8 hyperlinks follow the colors: off under NO_COLOR, or hidden as "links".
+BEL=$'\a'
+LINKS=1
+if [ -n "${NO_COLOR:-}" ] || ! shown links; then
+    LINKS=0
+fi
+
 # --- helpers ----------------------------------------------------------------
 # Helpers return their result in REPLY to avoid a subshell per call: the
 # script runs after every assistant message, so forks are the main cost.
@@ -111,10 +118,23 @@ repeat() {
     REPLY=${pad// /$1}
 }
 
-# visible_len <string> — length as displayed, without color escapes
+# visible_len <string> — length as displayed, without colors and link targets
 visible_len() {
     local plain=${1//$ESC\[*([0-9;])m/}
+    plain=${plain//$ESC\]8;;*([!$BEL])$BEL/}
     REPLY=${#plain}
+}
+
+# link <url> <text> — text as an OSC 8 hyperlink; plain text if links are off
+# or the URL is not http(s). Control characters are stripped from the URL so
+# it cannot terminate the escape sequence early.
+link() {
+    local url=${1//[[:cntrl:]]/}
+    REPLY=$2
+    [ "$LINKS" -eq 1 ] || return 0
+    case $url in
+        https://* | http://*) REPLY="${ESC}]8;;${url}${BEL}${2}${ESC}]8;;${BEL}" ;;
+    esac
 }
 
 # short_path <path> <keep> — "…/proj/app": the last <keep> components
@@ -197,6 +217,7 @@ read_input() {
     ctx_pct="" ctx_used="" ctx_size=""
     five_pct="" five_reset="" week_pct="" week_reset=""
     spend_pct="" spend_reset="" spend_usd=""
+    pr_number="" pr_url="" pr_state="" pr_kind=""
 
     local assignments
     assignments=$(jq -r '
@@ -220,7 +241,11 @@ read_input() {
           @sh "spend_usd=\(
               if $spend.used_usd != null and $spend.limit_usd != null
               then "$\($spend.used_usd) / $\($spend.limit_usd)"
-              else "" end)"
+              else "" end)",
+          @sh "pr_number=\(.pr.number | int)",
+          @sh "pr_url=\(.pr.url | str)",
+          @sh "pr_state=\(.pr.review_state | str)",
+          @sh "pr_kind=\(.pr.kind | str)"
     ' 2>/dev/null) || return 0
     # Safe: every value is quoted by jq's @sh.
     eval "$assignments"
@@ -327,9 +352,28 @@ render_location() {
     [ "$git_ahead" -gt 0 ] && out="${out} ${C_CYAN_B}↑${git_ahead}${C_RESET}"
     [ "$git_behind" -gt 0 ] && out="${out} ${C_RED_B}↓${git_behind}${C_RESET}"
     [ "$git_stash" -gt 0 ] && out="${out} ${C_DIM}≡${git_stash}${C_RESET}"
+    if [ -n "$pr_number" ] && shown pr; then
+        render_pr
+        out="${out} ${REPLY}"
+    fi
     [ -n "$git_subject" ] && [ "$level" -lt 1 ] &&
         out="${out}${SEP}${C_DIM}${git_subject} · ${git_age}${C_RESET}"
     REPLY=$out
+}
+
+# render_pr — "#123 approved", colored by review state and linked to the PR.
+# GitLab merge requests are written "!123".
+render_pr() {
+    local color=$C_CYAN_B label="#${pr_number}"
+    [ "$pr_kind" = mr ] && label="!${pr_number}"
+    case $pr_state in
+        approved) color=$C_GREEN && label="${label} approved" ;;
+        changes_requested) color=$C_RED && label="${label} changes" ;;
+        pending) color=$C_YELLOW && label="${label} pending" ;;
+        draft) color=$C_DIM && label="${label} draft" ;;
+    esac
+    link "$pr_url" "$label"
+    REPLY="${color}${REPLY}${C_RESET}"
 }
 
 # fit_location — the fullest line 1 that fits MAX_WIDTH
