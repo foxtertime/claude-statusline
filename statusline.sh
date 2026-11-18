@@ -268,12 +268,16 @@ fmt_reset() {
         fmt_remaining "$1"
         return
     fi
-    local ts=$1 fmt='+%Y%m%d %d %m %H:%M' out ymd day mon hhmm
+    local ymd day mon hhmm
     REPLY=""
-    # GNU date takes -d @epoch, BSD/macOS date takes -r epoch.
-    out=$(date -d "@$ts" "$fmt" 2>/dev/null || date -r "$ts" "$fmt" 2>/dev/null) || return 0
-    read -r ymd day mon hhmm <<<"$out"
-    if [ "$ymd" = "$(date +%Y%m%d)" ]; then
+    format_time "$1" '%Y%m%d %d %m %H:%M' || return 0
+    read -r ymd day mon hhmm <<<"$REPLY"
+    if [ -z "$TODAY" ]; then
+        set_now
+        format_time "$NOW" '%Y%m%d' || return 0
+        TODAY=$REPLY
+    fi
+    if [ "$ymd" = "$TODAY" ]; then
         REPLY=$hhmm
     elif [ "$LANG_CODE" = ru ]; then
         REPLY="$((10#$day)) ${MONTHS_RU[$((10#$mon))]}, $hhmm"
@@ -282,11 +286,37 @@ fmt_reset() {
     fi
 }
 
-# set_now — fill NOW with the current epoch, once per run.
-# EPOCHSECONDS needs bash 5; older shells pay one fork.
-NOW=""
+# bash 4.2+ formats times itself with printf '%(...)T'; bash 3.2 (macOS) has
+# to run date. The underscore variable forces the fallback, for the tests.
+BUILTIN_TIME=0
+if [ "${BASH_VERSINFO[0]}" -gt 4 ] ||
+    { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 2 ]; }; then
+    BUILTIN_TIME=1
+fi
+[ -n "${_STATUSLINE_FORCE_DATE:-}" ] && BUILTIN_TIME=0
+
+# format_time <epoch> <strftime format> — local time, result in REPLY
+format_time() {
+    if [ "$BUILTIN_TIME" -eq 1 ]; then
+        printf -v REPLY "%($2)T" "$1"
+        return 0
+    fi
+    # GNU date takes -d @epoch, BSD/macOS date takes -r epoch.
+    REPLY=$(date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2" 2>/dev/null)
+}
+
+# set_now — fill NOW with the current epoch, once per run, without a fork
+# except on bash 3.2.
+NOW="" TODAY=""
 set_now() {
-    [ -n "$NOW" ] || NOW=${EPOCHSECONDS:-$(date +%s)}
+    [ -n "$NOW" ] && return 0
+    if [ -n "${EPOCHSECONDS:-}" ]; then
+        NOW=$EPOCHSECONDS
+    elif [ "$BUILTIN_TIME" -eq 1 ]; then
+        printf -v NOW '%(%s)T' -1
+    else
+        NOW=$(date +%s)
+    fi
 }
 
 # --- demo -------------------------------------------------------------------

@@ -35,9 +35,9 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 ## Rules for statusline.sh
 
 - **It runs after every assistant message, so forks are the cost.** The
-  baseline is one `jq` and two `git` processes, plus two `date` calls per
-  absolute reset time shown. Helpers return through `REPLY` instead of
-  `$(...)`. Do not add a subprocess per field.
+  baseline is one `jq` and two `git` processes; times are formatted with
+  `format_time`, which needs no process on bash 4.2+. Helpers return through
+  `REPLY` instead of `$(...)`. Do not add a subprocess per field.
 - The git cache (`STATUSLINE_GIT_CACHE`) is read with `read` and validated,
   never evaluated; a new git field must be added to `reset_git`,
   `load_git_cache` and `save_git_cache` together, in the same order.
@@ -54,8 +54,11 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   `echo -e` on output: paths, branch names and commit subjects are untrusted.
   Colors are real escape bytes (`$'\033'`), printed with `%s`.
 - **Portability:** bash 3.2 (macOS system bash) and both GNU and BSD
-  userlands. No associative arrays, `${var,,}`, `mapfile`, `printf '%(…)T'`,
-  or GNU-only flags without a BSD fallback.
+  userlands. No associative arrays, `${var,,}`, `mapfile`, or GNU-only flags
+  without a BSD fallback. Newer-bash features are allowed only behind a
+  version check with a 3.2 fallback, like `printf '%(…)T'` in `format_time`;
+  keep a test that forces the fallback (`_STATUSLINE_FORCE_DATE=1`), because
+  the macOS job is the only place the 3.2 path runs naturally.
 - **Lines must fit `COLUMNS`.** Line 1 degrades through the levels in
   `render_location`; line 2 is the `SEGMENTS` array, most important first,
   and `join_fit` drops from the end. Add a new line-2 item as a segment in

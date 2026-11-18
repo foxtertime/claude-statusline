@@ -212,6 +212,19 @@ equals "$(STATUSLINE_LANG=en relative 20)" "Current ━────────�
 resets_now=$(printf '{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%s}}}' "$now")
 equals "$(line 3 "$(STATUSLINE_RESET=bogus render "$resets_now")")" "Current ━─────────────────── 5%  $now_hhmm"
 
+t "лимиты: встроенное форматирование времени совпадает с date"
+# На bash 4.2+ время форматирует printf '%(...)T', на bash 3.2 — date;
+# _STATUSLINE_FORCE_DATE включает путь через date и на новом bash.
+for zone in UTC Asia/Tokyo America/Los_Angeles; do
+    for ts in "$now" $((now + 3 * 86400)) 1741635000 1767225599; do
+        json=$(printf '{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%s}}}' "$ts")
+        builtin=$(printf '%s' "$json" | TZ=$zone "$BASH" "$SCRIPT")
+        fallback=$(printf '%s' "$json" | TZ=$zone _STATUSLINE_FORCE_DATE=1 "$BASH" "$SCRIPT")
+        equals "$builtin" "$fallback"
+    done
+done
+equals "$(line 3 "$(_STATUSLINE_FORCE_DATE=1 render '{"rate_limits":{"seven_day":{"used_percentage":5,"resets_at":1741635000}}}')")" "Weekly  ━─────────────────── 5%  10 мар, 19:30"
+
 t "лимиты: seven_day_sonnet больше не выводится"
 lacks "$(render '{"rate_limits":{"seven_day_sonnet":{"used_percentage":8}}}')" "Sonnet"
 
