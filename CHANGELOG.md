@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Добавлено
+- Имя ветки — кликабельная ссылка на ветку на GitHub или на репозиторий на другом хостинге ([#11](https://github.com/foxtertime/claude-statusline/issues/11)).
 - `STATUSLINE_GIT_CACHE` — кэш состояния git на заданное число секунд для очень больших репозиториев; по умолчанию выключен ([#10](https://github.com/foxtertime/claude-statusline/issues/10)).
 - Индикаторы режимов: `fast`, имя агента, режим vim, имя сессии и имя git worktree ([#9](https://github.com/foxtertime/claude-statusline/issues/9)).
 - Состояние кэша промпта в строке 2: доля чтений из кэша и время, когда он остынет ([#8](https://github.com/foxtertime/claude-statusline/issues/8)).

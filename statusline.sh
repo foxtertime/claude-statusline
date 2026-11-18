@@ -293,6 +293,7 @@ read_input() {
     cache_state="" cache_hit="" cache_expires=""
     fast="" vim_mode="" agent="" session="" worktree=""
     session_id=""
+    repo_host="" repo_owner="" repo_name=""
 
     local assignments
     assignments=$(jq -r '
@@ -316,6 +317,9 @@ read_input() {
           @sh "agent=\(.agent.name | text)",
           @sh "session=\(.session_name | text)",
           @sh "session_id=\(.session_id | str)",
+          @sh "repo_host=\(.workspace.repo.host | str)",
+          @sh "repo_owner=\(.workspace.repo.owner | str)",
+          @sh "repo_name=\(.workspace.repo.name | str)",
           @sh "worktree=\(.workspace.git_worktree // .worktree.name | text)",
           @sh "ctx_pct=\($ctx.used_percentage | int)",
           @sh "ctx_used=\($ctx.total_input_tokens | int)",
@@ -503,7 +507,9 @@ render_location() {
     local color=$C_GREEN_B
     [ $((git_staged + git_modified)) -gt 0 ] && color=$C_YELLOW_B
     [ "$git_conflicted" -gt 0 ] && color=$C_RED_B
-    out="${out}${color}${branch}${C_RESET}"
+    branch_url
+    link "$REPLY" "$branch"
+    out="${out}${color}${REPLY}${C_RESET}"
 
     local tree=""
     [ "$git_conflicted" -gt 0 ] && tree="${tree} ${C_RED_B}!${git_conflicted}${C_RESET}"
@@ -523,6 +529,23 @@ render_location() {
     [ -n "$git_subject" ] && [ "$level" -lt 1 ] &&
         out="${out}${SEP}${C_DIM}${git_subject} · ${git_age}${C_RESET}"
     REPLY=$out
+}
+
+# branch_url — where the branch name links to: the branch on GitHub, the
+# repository root on other hosts (their branch URLs differ), nothing when
+# Claude Code reports no origin remote. Anything that would need URL-encoding
+# is left out rather than encoded.
+branch_url() {
+    REPLY=""
+    case "${repo_host}/${repo_owner}/${repo_name}" in
+        /* | */ | *//* | *[!A-Za-z0-9._/-]*) return 0 ;;
+    esac
+    REPLY="https://${repo_host}/${repo_owner}/${repo_name}"
+    [ "$repo_host" = github.com ] || return 0
+    case $git_branch in
+        *[!A-Za-z0-9._/-]*) ;;
+        *) REPLY="${REPLY}/tree/${git_branch}" ;;
+    esac
 }
 
 # render_pr — "#123 approved", colored by review state and linked to the PR.
