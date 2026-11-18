@@ -658,6 +658,21 @@ contains "$out" "+156 -23"
 contains "$(STATUSLINE_ASCII=1 COLUMNS=60 demo)" "./app |"
 equals "$(STATUSLINE_ASCII=0 demo)" "$(demo)"
 
+# --- управляющие символы ----------------------------------------------------
+
+t "управляющие символы в теме коммита и пути не попадают в вывод"
+new_repo ctrl "$(printf 'evil \033[2J\033]0;pwned\007 subject')"
+out=$(line 1 "$(render "$(in_dir "$REPO")")")
+contains "$out" "│ evil  [2J ]0;pwned  subject · "
+lacks "$out" "$esc"
+lacks "$out" $'\a'
+odd="$TMP/odd$(printf '\033')[31mdir"
+mkdir -p "$odd"
+git init -q -b main "$odd"
+out=$(render "$(jq -nc --arg d "$odd" '{workspace:{current_dir:$d}}')")
+contains "$out" "odd [31mdir │ main [clean]"
+lacks "$out" "$esc"
+
 # --- установщик -------------------------------------------------------------
 
 install() { "$BASH" "$INSTALLER" "$@" 2>&1; }

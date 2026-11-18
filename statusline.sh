@@ -726,6 +726,8 @@ query_git() {
     log=$(git --no-optional-locks -C "$cwd" log -1 --format='%cr%x09%s' 2>/dev/null) || return 0
     git_age=${log%%$'\t'*}
     git_subject=${log#*$'\t'}
+    # Anyone who can commit can put escape sequences in a subject.
+    git_subject=${git_subject//[[:cntrl:]]/ }
     if [ "${#git_subject}" -gt "$SUBJECT_MAX" ]; then
         git_subject="${git_subject:0:$SUBJECT_MAX}${G_ELLIPSIS}"
     fi
@@ -744,6 +746,7 @@ query_git() {
 render_location() {
     local level=$1 overflow=${2:-0}
     local dir=${cwd:-?} branch=$git_branch
+    dir=${dir//[[:cntrl:]]/ }
     if [ -n "${HOME:-}" ]; then
         case $dir in
             "$HOME") dir="~" ;;
