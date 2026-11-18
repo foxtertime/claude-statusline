@@ -25,6 +25,7 @@
 #   STATUSLINE_THEME      dark | light, default dark
 #   STATUSLINE_COLOR_<ROLE>  SGR code overriding one role, e.g. "1;34"
 #   STATUSLINE_ASCII      1 to draw with ASCII characters only
+#   STATUSLINE_PADDING    the statusLine.padding value from settings.json
 
 set -u
 shopt -s extglob # visible_len strips escape sequences with *(...)
@@ -33,8 +34,11 @@ VERSION="1.2.0"
 
 SUBJECT_MAX=40
 SESSION_MAX=30
-BRANCH_MIN=8   # never truncate a branch name below this many characters
-WIDTH_MARGIN=4 # columns left free for Claude Code's own padding
+BRANCH_MIN=8 # never truncate a branch name below this many characters
+# Claude Code shows COLUMNS - 4 - 2 * padding columns of a status line and
+# cuts longer lines with an ellipsis (measured on Claude Code 2.1.327 at
+# widths 80, 100 and 130 with padding 0-3).
+WIDTH_MARGIN=4
 MONTHS_RU=("" "янв" "фев" "мар" "апр" "май" "июн" "июл" "авг" "сен" "окт" "ноя" "дек")
 MONTHS_EN=("" "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec")
 
@@ -85,10 +89,17 @@ GIT_CACHE_TTL=0
 is_int "${STATUSLINE_GIT_CACHE:-}" && GIT_CACHE_TTL=$STATUSLINE_GIT_CACHE
 GIT_CACHE_DIR="${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}/claude-statusline"
 
+# statusLine.padding is not part of the input, so it is passed as an option.
+PADDING=0
+if is_int "${STATUSLINE_PADDING:-}" && [ "$STATUSLINE_PADDING" -le 40 ]; then
+    PADDING=$STATUSLINE_PADDING
+fi
+
 # Claude Code exports the terminal size; 0 means "unknown, do not fit".
 MAX_WIDTH=0
 if is_int "${COLUMNS:-}" && [ "$COLUMNS" -ge 20 ]; then
-    MAX_WIDTH=$((COLUMNS - WIDTH_MARGIN))
+    MAX_WIDTH=$((COLUMNS - WIDTH_MARGIN - 2 * PADDING))
+    [ "$MAX_WIDTH" -lt 10 ] && MAX_WIDTH=10
 fi
 
 # Segments: git commit pr links worktree effort fast agent context tokens cost
@@ -198,11 +209,76 @@ repeat() {
     REPLY=${pad// /$1}
 }
 
-# visible_len <string> — length as displayed, without colors and link targets
+# visible_len <string> — terminal columns, without colors and link targets.
+# East Asian wide characters and emoji take two columns.
 visible_len() {
     local plain=${1//$ESC\[*([0-9;])m/}
     plain=${plain//$ESC\]8;;*([!$BEL])$BEL/}
-    REPLY=${#plain}
+    local width=${#plain}
+    wide_count "$plain"
+    REPLY=$((width + REPLY))
+}
+
+# wide_count <string> — how many wide characters it contains.
+# Works on UTF-8 bytes in the C locale, because bash 3.2 cannot be trusted
+# with characters here: its printf "'c" returns the first byte, and its
+# bracket ranges compare by collation, so [ -~] can match non-ASCII.
+# `local LC_ALL=C` is undone on return in every bash version we support.
+wide_count() {
+    local LC_ALL=C
+    local s=$1 g
+    s=${s//[$'\001'-$'\177']/}
+    REPLY=0
+    [ -z "$s" ] && return 0
+    # Our own glyphs and two-byte sequences (Latin, Cyrillic...) are narrow.
+    for g in ━ ─ │ … ↑ ↓ ≡ −; do
+        s=${s//$g/}
+    done
+    s=${s//[$'\302'-$'\337'][$'\200'-$'\277']/}
+    local i=0 j len=${#s} b cp n count=0
+    while [ "$i" -lt "$len" ]; do
+        byte_at "$s" "$i"
+        b=$REPLY
+        if [ "$b" -ge 240 ]; then
+            n=4 cp=$((b & 7))
+        elif [ "$b" -ge 224 ]; then
+            n=3 cp=$((b & 15))
+        else
+            i=$((i + 1))
+            continue
+        fi
+        for ((j = 1; j < n; j++)); do
+            byte_at "$s" $((i + j))
+            cp=$(((cp << 6) | (REPLY & 63)))
+        done
+        [ "$cp" -ge 4352 ] && is_wide "$cp" && count=$((count + 1))
+        i=$((i + n))
+    done
+    REPLY=$count
+}
+
+# byte_at <string> <index> — unsigned value of one byte (C locale only)
+byte_at() {
+    printf -v REPLY '%d' "'${1:$2:1}"
+    # bash 3.2 returns a signed char.
+    [ "$REPLY" -lt 0 ] && REPLY=$((REPLY + 256))
+    return 0
+}
+
+# is_wide <code point> — East Asian Wide/Fullwidth blocks and emoji
+is_wide() {
+    local c=$1
+    [ "$c" -le 4447 ] && return 0 # 1100-115F Hangul Jamo
+    [ "$c" -ge 11904 ] && [ "$c" -le 42191 ] &&
+        [ "$c" -ne 12351 ] && return 0                     # 2E80-A4CF CJK, kana
+    [ "$c" -ge 44032 ] && [ "$c" -le 55203 ] && return 0   # AC00-D7A3 Hangul
+    [ "$c" -ge 63744 ] && [ "$c" -le 64255 ] && return 0   # F900-FAFF CJK compat
+    [ "$c" -ge 65072 ] && [ "$c" -le 65103 ] && return 0   # FE30-FE4F
+    [ "$c" -ge 65280 ] && [ "$c" -le 65376 ] && return 0   # FF00-FF60 fullwidth
+    [ "$c" -ge 65504 ] && [ "$c" -le 65510 ] && return 0   # FFE0-FFE6
+    [ "$c" -ge 127744 ] && [ "$c" -le 129791 ] && return 0 # 1F300-1FAFF emoji
+    [ "$c" -ge 131072 ] && [ "$c" -le 262141 ] && return 0 # 20000-3FFFD CJK ext
+    return 1
 }
 
 # link <url> <text> — text as an OSC 8 hyperlink; plain text if links are off
@@ -245,15 +321,15 @@ level_color() {
 
 # bar <percent> — colored bar of BAR_WIDTH cells
 bar() {
-    local pct=$1 filled color
-    filled=$(((pct * BAR_WIDTH + 50) / 100))
-    [ "$filled" -gt "$BAR_WIDTH" ] && filled=$BAR_WIDTH
+    local pct=$1 width=${2:-$BAR_WIDTH} filled color
+    filled=$(((pct * width + 50) / 100))
+    [ "$filled" -gt "$width" ] && filled=$width
     [ "$filled" -lt 0 ] && filled=0
     level_color "$pct"
     color=$REPLY
     repeat "$G_FULL" "$filled"
     local full=$REPLY
-    repeat "$G_EMPTY" "$((BAR_WIDTH - filled))"
+    repeat "$G_EMPTY" "$((width - filled))"
     REPLY="${color}${full}${C_DIM}${REPLY}${C_RESET}"
 }
 
@@ -634,6 +710,8 @@ query_git() {
 #   2  shorten the path to its last two components
 #   3  shorten the path to its last component
 #   4  truncate the branch name by <overflow> columns
+#   5  also drop the worktree name and the pull request
+#   6  also drop ahead/behind and stash
 render_location() {
     local level=$1 overflow=${2:-0}
     local dir=${cwd:-?} branch=$git_branch
@@ -678,11 +756,14 @@ render_location() {
     [ "$git_untracked" -gt 0 ] && tree="${tree} ${C_DIM}?${git_untracked}${C_RESET}"
     out="${out}${tree:- ${C_DIM}${L_CLEAN}${C_RESET}}"
 
-    [ "$git_ahead" -gt 0 ] && out="${out} ${C_CYAN_B}${G_AHEAD}${git_ahead}${C_RESET}"
-    [ "$git_behind" -gt 0 ] && out="${out} ${C_RED_B}${G_BEHIND}${git_behind}${C_RESET}"
-    [ "$git_stash" -gt 0 ] && out="${out} ${C_DIM}${G_STASH}${git_stash}${C_RESET}"
-    [ -n "$worktree" ] && shown worktree && out="${out} ${C_DIM}wt:${worktree}${C_RESET}"
-    if [ -n "$pr_number" ] && shown pr; then
+    if [ "$level" -lt 6 ]; then
+        [ "$git_ahead" -gt 0 ] && out="${out} ${C_CYAN_B}${G_AHEAD}${git_ahead}${C_RESET}"
+        [ "$git_behind" -gt 0 ] && out="${out} ${C_RED_B}${G_BEHIND}${git_behind}${C_RESET}"
+        [ "$git_stash" -gt 0 ] && out="${out} ${C_DIM}${G_STASH}${git_stash}${C_RESET}"
+    fi
+    [ -n "$worktree" ] && shown worktree && [ "$level" -lt 5 ] &&
+        out="${out} ${C_DIM}wt:${worktree}${C_RESET}"
+    if [ -n "$pr_number" ] && shown pr && [ "$level" -lt 5 ]; then
         render_pr
         out="${out} ${REPLY}"
     fi
@@ -726,7 +807,7 @@ render_pr() {
 # fit_location — the fullest line 1 that fits MAX_WIDTH
 fit_location() {
     local level line overflow=0
-    for level in 0 1 2 3 4; do
+    for level in 0 1 2 3 4 5 6; do
         render_location "$level" "$overflow"
         [ "$MAX_WIDTH" -eq 0 ] && return
         line=$REPLY
@@ -753,21 +834,41 @@ join_fit() {
         [ "$REPLY" -le "$MAX_WIDTH" ] && break
         count=$((count - 1))
     done
+    # Down to the first segment and still too wide: try its shorter forms.
+    if [ "$MAX_WIDTH" -gt 0 ] && [ "$count" -le 1 ]; then
+        for line in "${HEAD_FORMS[@]}"; do
+            visible_len "$line"
+            [ "$REPLY" -le "$MAX_WIDTH" ] && break
+        done
+    fi
     REPLY=$line
 }
 
-# render_model — fills SEGMENTS for line 2, most important first
-render_model() {
+# head_form <with effort> <with fast> <with agent> — the model segment
+head_form() {
     local out="${C_MODEL}${model:-?}"
     if [ -n "$ctx_size" ]; then
         fmt_tokens "$ctx_size"
         out="${out} (${REPLY})"
     fi
-    [ -n "$effort" ] && shown effort && out="${out} (${effort})"
+    [ "$1" -eq 1 ] && [ -n "$effort" ] && shown effort && out="${out} (${effort})"
     out="${out}${C_RESET}"
-    [ -n "$fast" ] && shown fast && out="${out} ${C_YELLOW_B}${L_FAST}${C_RESET}"
-    [ -n "$agent" ] && shown agent && out="${out} ${C_CYAN_B}@${agent}${C_RESET}"
-    SEGMENTS=("$out")
+    [ "$2" -eq 1 ] && [ -n "$fast" ] && shown fast && out="${out} ${C_YELLOW_B}${L_FAST}${C_RESET}"
+    [ "$3" -eq 1 ] && [ -n "$agent" ] && shown agent && out="${out} ${C_CYAN_B}@${agent}${C_RESET}"
+    REPLY=$out
+}
+
+# render_model — fills SEGMENTS for line 2, most important first
+render_model() {
+    local out
+    # The model segment always stays; on a very narrow terminal it sheds the
+    # agent, then fast mode, then effort.
+    HEAD_FORMS=()
+    head_form 1 1 1 && HEAD_FORMS+=("$REPLY")
+    head_form 1 1 0 && HEAD_FORMS+=("$REPLY")
+    head_form 1 0 0 && HEAD_FORMS+=("$REPLY")
+    head_form 0 0 0 && HEAD_FORMS+=("$REPLY")
+    SEGMENTS=("${HEAD_FORMS[0]}")
 
     if [ -n "$ctx_pct" ] && shown context; then
         bar "$ctx_pct"
@@ -842,19 +943,40 @@ render_cost() {
     REPLY=$out
 }
 
-# render_limit <label> <percent> <reset epoch> [note]
+# render_limit <level> <label> <percent> <reset epoch> [note] [bar width]
+# Level 0 is the full row; level 1 drops the note, level 2 the reset time.
 render_limit() {
-    local label=$1 pct=$2 reset=$3 note=${4:-} out pad
+    local level=$1 label=$2 pct=$3 reset=$4 note=${5:-} width=${6:-$BAR_WIDTH} out pad
     # Padded by hand: printf counts bytes, and the labels can be Cyrillic.
     printf -v pad '%*s' $((LIMIT_LABEL_WIDTH - ${#label})) ''
-    bar "$pct"
+    bar "$pct" "$width"
     out="${C_DIM}${label}${pad}${C_RESET}${REPLY} ${C_DIM}${pct}%${C_RESET}"
-    if [ -n "$reset" ]; then
+    if [ -n "$reset" ] && [ "$level" -lt 2 ]; then
         fmt_reset "$reset"
         [ -n "$REPLY" ] && out="${out}  ${C_DIM}${REPLY}${C_RESET}"
     fi
-    [ -n "$note" ] && out="${out}  ${C_DIM}${note}${C_RESET}"
+    [ -n "$note" ] && [ "$level" -lt 1 ] && out="${out}  ${C_DIM}${note}${C_RESET}"
     REPLY=$out
+}
+
+# fit_limit <label> <percent> <reset epoch> [note] — the fullest limit row
+# that fits MAX_WIDTH: drop the note, then the reset time, then shorten the
+# bar down to 5 cells.
+fit_limit() {
+    local level line width
+    for level in 0 1 2; do
+        render_limit "$level" "$@"
+        [ "$MAX_WIDTH" -eq 0 ] && return
+        line=$REPLY
+        visible_len "$line"
+        if [ "$REPLY" -le "$MAX_WIDTH" ]; then
+            REPLY=$line
+            return
+        fi
+    done
+    width=$((BAR_WIDTH - (REPLY - MAX_WIDTH)))
+    [ "$width" -lt 5 ] && width=5
+    render_limit 2 "$1" "$2" "$3" "${4:-}" "$width"
 }
 
 # --- main -------------------------------------------------------------------
@@ -894,16 +1016,16 @@ main() {
     printf '%s\n' "$REPLY"
     shown limits || return 0
     if [ -n "$five_pct" ] && shown current; then
-        render_limit "$L_CURRENT" "$five_pct" "$five_reset"
+        fit_limit "$L_CURRENT" "$five_pct" "$five_reset"
         printf '%s\n' "$REPLY"
     fi
     if [ -n "$week_pct" ] && shown weekly; then
-        render_limit "$L_WEEKLY" "$week_pct" "$week_reset"
+        fit_limit "$L_WEEKLY" "$week_pct" "$week_reset"
         printf '%s\n' "$REPLY"
     fi
     # Present only behind a Claude apps gateway with a spend limit.
     if [ -n "$spend_pct" ] && shown spend; then
-        render_limit "$L_SPEND" "$spend_pct" "$spend_reset" "$spend_usd"
+        fit_limit "$L_SPEND" "$spend_pct" "$spend_reset" "$spend_usd"
         printf '%s\n' "$REPLY"
     fi
 }
