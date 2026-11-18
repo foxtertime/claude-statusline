@@ -54,6 +54,13 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 
 ## Workflow
 
+- **GitHub Issues track all work.** Before starting, find the issue
+  (`gh issue list`, `gh issue view <n>`) or create one (`gh issue create`) —
+  bugs, features and chores alike. Name the branch after it
+  (`feature/<n>-<short-name>`, `hotfix/X.Y.Z` for a released bug) and end the
+  commit or PR body with `Closes #<n>` (or `Refs #<n>` if it only partly
+  addresses it). Follow-up work you notice but don't do goes into a new issue,
+  not a TODO comment.
 - **Gitflow.** Branch `feature/<name>` from `develop`, merge back with
   `--no-ff`. Never commit directly to `main` or `develop`. Releases go through
   `release/X.Y.Z`, hotfixes through `hotfix/X.Y.Z` from `main`. The exact
