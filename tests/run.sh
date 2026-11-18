@@ -25,7 +25,7 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 export TZ=UTC NO_COLOR=1
 unset CLAUDE_CONFIG_DIR COLUMNS
 # Язык задаётся явно: по умолчанию он зависит от локали машины.
-export STATUSLINE_LANG=ru
+export STATUSLINE_LANG=en
 unset STATUSLINE_BAR_WIDTH STATUSLINE_WARN STATUSLINE_CRIT STATUSLINE_HIDE
 unset STATUSLINE_RESET STATUSLINE_GIT_CACHE
 export XDG_CACHE_HOME="$TMP/cache"
@@ -98,7 +98,7 @@ out=$(demo)
 equals "$?" "0"
 for part in "$tilde/projects/app" "feature/auth" "+2" "~1" "?3" "↑1" "≡1" "wt:auth" \
     "#42 approved" "fix(auth): refresh expired tokens" "Opus 5.5 (1M) (high)" "fast" \
-    "@reviewer" "Ctx " "62% (620K / 1M)" "43 мин" "+156 −23" "Cache 91%" "NORMAL" \
+    "@reviewer" "Ctx " "62% (620K / 1M)" "43m" "+156 −23" "Cache 91%" "NORMAL" \
     "refactor auth middleware" "Current " "Weekly " "Spend " "\$430 / \$500"; do
     contains "$out" "$part"
 done
@@ -110,7 +110,7 @@ lacks "$out" "fix(auth)"
 lacks "$out" "Current"
 lacks "$out" "refactor auth"
 contains "$(STATUSLINE_LANG=en demo)" "43m"
-contains "$(STATUSLINE_RESET=relative demo)" "через 2 ч 10 мин"
+contains "$(STATUSLINE_RESET=relative demo)" "in 2h 10m"
 equals "$(STATUSLINE_HIDE=git demo | sed -n 1p)" "$tilde/projects/app"
 lacks "$(demo)" "$esc"
 
@@ -185,7 +185,7 @@ now_hhmm=$(printf '%02d:%02d' $((now % 86400 / 3600)) $((now % 3600 / 60)))
 t "лимиты: время сброса сегодня и в другой день"
 out=$(render "$(printf '{"rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":%s},"seven_day":{"used_percentage":81.2,"resets_at":1741635000}}}' "$now")")
 equals "$(line 3 "$out")" "Current ━━━━━─────────────── 24%  $now_hhmm"
-equals "$(line 4 "$out")" "Weekly  ━━━━━━━━━━━━━━━━──── 81%  10 мар, 19:30"
+equals "$(line 4 "$out")" "Weekly  ━━━━━━━━━━━━━━━━──── 81%  Mar 10, 19:30"
 
 t "лимиты: окна независимы, resets_at необязателен"
 out=$(render '{"rate_limits":{"seven_day":{"used_percentage":5}}}')
@@ -194,7 +194,7 @@ lacks "$out" "Current"
 
 t "лимиты: spend_limit с суммами и без, выше 100%"
 out=$(render '{"rate_limits":{"spend_limit":{"used_percentage":62.8,"resets_at":1741635000,"used_usd":314.12,"limit_usd":500}}}')
-equals "$(line 3 "$out")" "Spend   ━━━━━━━━━━━━━─────── 63%  10 мар, 19:30  \$314.12 / \$500"
+equals "$(line 3 "$out")" "Spend   ━━━━━━━━━━━━━─────── 63%  Mar 10, 19:30  \$314.12 / \$500"
 out=$(render '{"rate_limits":{"spend_limit":{"used_percentage":130}}}')
 equals "$(line 3 "$out")" "Spend   ━━━━━━━━━━━━━━━━━━━━ 130%"
 
@@ -202,11 +202,11 @@ t "лимиты: STATUSLINE_RESET=relative — время до сброса"
 # Запас в 30 секунд, чтобы результат не зависел от момента запуска.
 resets_in() { printf '{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%s}}}' "$(($(date +%s) + $1))"; }
 relative() { line 3 "$(STATUSLINE_RESET=relative render "$(resets_in "$1")")"; }
-equals "$(relative 7830)" "Current ━─────────────────── 5%  через 2 ч 10 мин"
-equals "$(relative 273630)" "Current ━─────────────────── 5%  через 3 д 4 ч"
-equals "$(relative 330)" "Current ━─────────────────── 5%  через 5 мин"
-equals "$(relative 20)" "Current ━─────────────────── 5%  через <1 мин"
-equals "$(relative -500)" "Current ━─────────────────── 5%  через <1 мин"
+equals "$(relative 7830)" "Current ━─────────────────── 5%  in 2h 10m"
+equals "$(relative 273630)" "Current ━─────────────────── 5%  in 3d 4h"
+equals "$(relative 330)" "Current ━─────────────────── 5%  in 5m"
+equals "$(relative 20)" "Current ━─────────────────── 5%  in <1m"
+equals "$(relative -500)" "Current ━─────────────────── 5%  in <1m"
 equals "$(STATUSLINE_LANG=en relative 7830)" "Current ━─────────────────── 5%  in 2h 10m"
 equals "$(STATUSLINE_LANG=en relative 20)" "Current ━─────────────────── 5%  in <1m"
 resets_now=$(printf '{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%s}}}' "$now")
@@ -223,7 +223,7 @@ for zone in UTC Asia/Tokyo America/Los_Angeles; do
         equals "$builtin" "$fallback"
     done
 done
-equals "$(line 3 "$(_STATUSLINE_FORCE_DATE=1 render '{"rate_limits":{"seven_day":{"used_percentage":5,"resets_at":1741635000}}}')")" "Weekly  ━─────────────────── 5%  10 мар, 19:30"
+equals "$(line 3 "$(_STATUSLINE_FORCE_DATE=1 render '{"rate_limits":{"seven_day":{"used_percentage":5,"resets_at":1741635000}}}')")" "Weekly  ━─────────────────── 5%  Mar 10, 19:30"
 
 t "лимиты: seven_day_sonnet больше не выводится"
 lacks "$(render '{"rate_limits":{"seven_day_sonnet":{"used_percentage":8}}}')" "Sonnet"
@@ -326,9 +326,9 @@ cost_line() {
 }
 
 t "cost: стоимость, длительность, строки"
-equals "$(cost_line '{"total_cost_usd":1.2351,"total_duration_ms":2280000,"total_lines_added":156,"total_lines_removed":23}')" "M │ \$1.24 · 38 мин · +156 −23"
+equals "$(cost_line '{"total_cost_usd":1.2351,"total_duration_ms":2280000,"total_lines_added":156,"total_lines_removed":23}')" "M │ \$1.24 · 38m · +156 −23"
 equals "$(STATUSLINE_LANG=en cost_line '{"total_cost_usd":12,"total_duration_ms":3900000}')" "M │ \$12.00 · 1h 5m"
-equals "$(cost_line '{"total_cost_usd":0.05,"total_duration_ms":45000}')" "M │ \$0.05 · 45 с"
+equals "$(cost_line '{"total_cost_usd":0.05,"total_duration_ms":45000}')" "M │ \$0.05 · 45s"
 equals "$(STATUSLINE_LANG=en cost_line '{"total_duration_ms":273600000}')" "M │ 3d 4h"
 equals "$(cost_line '{"total_lines_added":0,"total_lines_removed":4}')" "M │ +0 −4"
 
@@ -338,7 +338,7 @@ equals "$(cost_line '{"total_cost_usd":0,"total_duration_ms":0,"total_lines_adde
 equals "$(STATUSLINE_HIDE=cost cost_line '{"total_cost_usd":1}')" "M"
 
 t "cost: по подписке сумма в долларах не показывается"
-equals "$(cost_line '{"total_cost_usd":1.5,"total_duration_ms":60000}' '"rate_limits":{"five_hour":{"used_percentage":1}}')" "M │ 1 мин"
+equals "$(cost_line '{"total_cost_usd":1.5,"total_duration_ms":60000}' '"rate_limits":{"five_hour":{"used_percentage":1}}')" "M │ 1m"
 
 # --- prompt cache -----------------------------------------------------------
 
@@ -353,10 +353,10 @@ warm_until() { printf '{"caching_observed":true,"warm":true,"hit_ratio":0.914,"e
 
 t "cache: тёплый кэш — доля попаданий и время остывания"
 equals "$(cache_line "$(warm_until "$now")")" "M │ Cache 91% · $now_hhmm"
-equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":null,"expires_at":1741635000}')" "M │ Cache 10 мар, 19:30"
+equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":null,"expires_at":1741635000}')" "M │ Cache Mar 10, 19:30"
 equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":0.5,"expires_at":null}')" "M │ Cache 50%"
 equals "$(cache_line '{"caching_observed":true,"warm":true}')" "M │ Cache warm"
-equals "$(STATUSLINE_RESET=relative cache_line "$(warm_until $((now + 270)))")" "M │ Cache 91% · через 4 мин"
+equals "$(STATUSLINE_RESET=relative cache_line "$(warm_until $((now + 270)))")" "M │ Cache 91% · in 4m"
 
 t "cache: остывший кэш"
 equals "$(cache_line '{"caching_observed":true,"warm":false,"hit_ratio":0.9,"expires_at":null}')" "M │ Cache cold"
@@ -552,6 +552,63 @@ printf '%s\n' "$(date +%s)" "$REPO" main x 0 0 0 0 0 0 age subject >"$entry"
 equals "$(cached s1)" "$REPO │ main ?2"
 equals "$(cached '../../evil')" "$REPO │ main ?2"
 if [ -e "$TMP/evil" ] || [ -e "$XDG_CACHE_HOME/evil" ]; then fail "запись вне каталога кэша"; else ok; fi
+
+# --- русский режим, цвета, ASCII --------------------------------------------
+
+ru() { STATUSLINE_LANG=ru "$@"; }
+
+t "русский режим: все подписи переведены"
+out=$(ru demo)
+for part in "#42 одобрен" "быстро" "Контекст " "43 мин" "Кэш 91%" "2 часа назад" \
+    "Сейчас " "Неделя " "Расход "; do
+    contains "$out" "$part"
+done
+for word in Ctx Cache Current Weekly Spend approved fast cold warm clean "no git"; do
+    lacks "$out" "$word"
+done
+
+t "русский режим: прочие подписи, даты и длительности"
+contains "$(ru render "$(in_dir "$TMP")")" "[нет git]"
+new_repo ru_clean
+contains "$(ru render "$(in_dir "$REPO")")" "main [чисто]"
+contains "$(ru render '{"prompt_cache":{"caching_observed":true,"warm":false}}')" "Кэш остыл"
+contains "$(ru render '{"prompt_cache":{"caching_observed":true,"warm":true}}')" "Кэш тёплый"
+for state in "changes_requested правки" "pending ждёт" "draft черновик"; do
+    contains "$(ru render "$(printf '{"workspace":{"current_dir":"%s"},"pr":{"number":1,"review_state":"%s"}}' "$REPO" "${state%% *}")")" "#1 ${state#* }"
+done
+equals "$(line 3 "$(ru render '{"rate_limits":{"seven_day":{"used_percentage":5,"resets_at":1741635000}}}')")" "Неделя ━─────────────────── 5%  10 мар, 19:30"
+equals "$(line 3 "$(ru env STATUSLINE_RESET=relative "$BASH" "$SCRIPT" <<<"$(resets_in 7830)")")" "Сейчас ━─────────────────── 5%  через 2 ч 10 мин"
+equals "$(ru cost_line '{"total_duration_ms":273600000}')" "M │ 3 д 4 ч"
+equals "$(ru cost_line '{"total_duration_ms":45000}')" "M │ 45 с"
+
+t "русский режим: столбец подписей лимитов выровнен"
+out=$(ru demo)
+for n in 3 4 5; do
+    row=$(line "$n" "$out")
+    equals "${row:6:1}" " "
+    equals "${row:7:1}" "━"
+done
+
+t "цвета: светлая тема и переопределение ролей"
+coloured() { NO_COLOR='' "$@" "$BASH" "$SCRIPT" --demo; }
+contains "$(coloured env)" "${esc}[2;37m"
+contains "$(coloured env STATUSLINE_THEME=light)" "${esc}[90m"
+lacks "$(coloured env STATUSLINE_THEME=light)" "${esc}[2;37m"
+contains "$(coloured env STATUSLINE_COLOR_DIR='1;34')" "${esc}[1;34m$tilde/projects/app"
+contains "$(coloured env STATUSLINE_COLOR_OK=92)" "${esc}[92m+2"
+contains "$(coloured env STATUSLINE_COLOR_WARN=93)" "${esc}[93m━"
+equals "$(coloured env STATUSLINE_COLOR_DIR='1;34m;rm -rf' STATUSLINE_THEME=bogus)" "$(coloured env)"
+equals "$(NO_COLOR=1 STATUSLINE_COLOR_DIR='1;34' demo)" "$(demo)"
+
+t "ASCII: только ASCII-символы, кроме данных пользователя"
+out=$(STATUSLINE_ASCII=1 demo)
+non_ascii=$(printf '%s' "$out" | LC_ALL=C grep -c '[^ -~]')
+equals "$non_ascii" "0"
+contains "$(line 1 "$out")" "$tilde/projects/app | feature/auth +2 ~1 ?3 ^1 =1"
+contains "$out" "Current ###"
+contains "$out" "+156 -23"
+contains "$(STATUSLINE_ASCII=1 COLUMNS=60 demo)" "./app |"
+equals "$(STATUSLINE_ASCII=0 demo)" "$(demo)"
 
 # --- установщик -------------------------------------------------------------
 

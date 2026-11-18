@@ -6,9 +6,11 @@
 
 
 ### Добавлено
+- Темы и цвета: `STATUSLINE_THEME=light` для светлого фона и `STATUSLINE_COLOR_<РОЛЬ>` для отдельных ролей; `STATUSLINE_ASCII=1` — режим без псевдографики ([#26](https://github.com/foxtertime/claude-statusline/issues/26)).
 - Флаг `--demo`: статуслайн на встроенном примере данных со всеми сегментами — чтобы увидеть действие настроек сразу ([#24](https://github.com/foxtertime/claude-statusline/issues/24)).
 
 ### Изменено
+- В русском режиме переведены все подписи: `Контекст`, `Кэш`, `Сейчас`, `Неделя`, `Расход`, `[чисто]`, состояния ревью и другие ([#26](https://github.com/foxtertime/claude-statusline/issues/26)).
 - Время сброса лимитов и остывания кэша форматируется без запуска `date` на bash 4.2+: отрисовка с тремя строками лимитов и кэшем ускорилась примерно с 39 до 10 мс. На bash 3.2 (macOS) по-прежнему используется `date` ([#25](https://github.com/foxtertime/claude-statusline/issues/25)).
 
 ## [1.2.0] — 2026-11-19
