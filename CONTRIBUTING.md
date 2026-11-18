@@ -22,7 +22,27 @@ make fmt     # отформатировать код
 | `release/<X.Y.Z>` | Подготовка релиза: версия, changelog, исправления | `develop` | `main` и `develop` |
 | `hotfix/<X.Y.Z>` | Срочное исправление выпущенной версии | `main` | `main` и `develop` |
 
-Все слияния — с `--no-ff`, чтобы ветка оставалась видна в истории. В `main` и `develop` напрямую не коммитим.
+В `main` и `develop` напрямую не коммитим и не пушим.
+
+## Задачи и pull request'ы
+
+Любая работа начинается с issue и попадает в `develop` или `main` только через pull request — это относится и к feature-, и к release-, и к hotfix-веткам.
+
+```bash
+gh issue create                              # или найти существующую: gh issue list
+git checkout develop && git pull
+git checkout -b feature/<номер>-<имя>
+# ... изменения, make check, коммиты ...
+git push -u origin feature/<номер>-<имя>
+gh pr create --base develop                  # в описании: Closes #<номер>
+gh pr checks --watch                         # дождаться CI, включая macOS
+gh pr merge --merge --delete-branch
+gh issue close <номер> --comment "Сделано в #<номер PR>"
+```
+
+- Сливаем только при зелёном CI и только merge-коммитом (`--merge`), без squash и rebase: ветка должна оставаться видна в истории.
+- Один pull request — одна issue.
+- `Closes #N` закрывает issue автоматически лишь при слиянии в `main`, поэтому после слияния в `develop` issue закрывается вручную.
 
 ## Коммиты — Conventional Commits
 
@@ -63,25 +83,30 @@ git checkout -b release/X.Y.Z
 # 2. в CHANGELOG.md: [Unreleased] → [X.Y.Z] — ГГГГ-ММ-ДД, обновить ссылки внизу
 make check
 git commit -am "chore(release): X.Y.Z"
+git push -u origin release/X.Y.Z
 
-git checkout main
-git merge --no-ff release/X.Y.Z -m "Merge branch 'release/X.Y.Z'"
+# 3. PR в main; ветку пока не удаляем
+gh pr create --base main --title "chore(release): X.Y.Z"
+gh pr checks --watch
+gh pr merge --merge
+
+# 4. тег на merge-коммит в main
+git checkout main && git pull
 git tag -a vX.Y.Z -m "vX.Y.Z"
-
-git checkout develop
-git merge --no-ff release/X.Y.Z -m "Merge branch 'release/X.Y.Z' into develop"
-git branch -d release/X.Y.Z
-
-git push origin main develop
 git push origin vX.Y.Z
+
+# 5. PR той же ветки в develop
+gh pr create --base develop --head release/X.Y.Z --title "chore(release): merge X.Y.Z back into develop"
+gh pr checks --watch
+gh pr merge --merge --delete-branch
 ```
 
-Тег пушится отдельной командой, после веток. При выпуске 1.1.0 всё ушло одним `git push` — тем же, что впервые добавил workflow-файлы, — и `Release` не запустился ([#1](https://github.com/foxtertime/claude-statusline/issues/1)); точная причина не установлена, при выпуске 1.1.1 отдельный пуш тега сработал.
+Тег пушится отдельной командой, когда `main` уже на GitHub. При выпуске 1.1.0 ветки и тег ушли одним `git push` — тем же, что впервые добавил workflow-файлы, — и `Release` не запустился ([#1](https://github.com/foxtertime/claude-statusline/issues/1)); точная причина не установлена.
 
-После пуша тега workflow `Release` проверяет, что тег совпадает с `VERSION`, и публикует релиз на GitHub с текстом из `CHANGELOG.md`. Если он не запустился, его можно запустить вручную для уже существующего тега:
+После пуша тега workflow `Release` проверяет, что тег совпадает с `VERSION`, публикует релиз на GitHub с текстом из `CHANGELOG.md` и прикладывает к нему `statusline.sh`, `install.sh` и `SHA256SUMS` — с них работает установка без клонирования. Если он не запустился, его можно запустить вручную для уже существующего тега:
 
 ```bash
 gh workflow run release.yml -f tag=vX.Y.Z
 ```
 
-Hotfix выпускается так же, но ветка `hotfix/X.Y.Z` создаётся от `main`.
+Hotfix выпускается так же — двумя pull request'ами, — но ветка `hotfix/X.Y.Z` создаётся от `main`.

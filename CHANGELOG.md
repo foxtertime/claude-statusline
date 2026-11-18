@@ -4,6 +4,26 @@
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-11-19
+
+
+### Добавлено
+- Установщик: установка без клонирования из релиза с проверкой `SHA256SUMS`; `--set`, `--unset`, `--refresh` и `--padding` для настроек; `--check` для диагностики. `STATUSLINE_PADDING` выставляется автоматически по `statusLine.padding`; `--uninstall` убирает и опции ([#23](https://github.com/foxtertime/claude-statusline/issues/23)).
+- `STATUSLINE_LAYOUT`: порядок сегментов строки 2, перенос части сегментов на отдельную строку через `/` и однострочный режим `compact` ([#20](https://github.com/foxtertime/claude-statusline/issues/20)).
+- `STATUSLINE_PADDING` — передаёт скрипту `statusLine.padding`, чтобы строки с отступом не обрезались ([#21](https://github.com/foxtertime/claude-statusline/issues/21)).
+- Темы и цвета: `STATUSLINE_THEME=light` для светлого фона и `STATUSLINE_COLOR_<РОЛЬ>` для отдельных ролей; `STATUSLINE_ASCII=1` — режим без псевдографики ([#26](https://github.com/foxtertime/claude-statusline/issues/26)).
+- Флаг `--demo`: статуслайн на встроенном примере данных со всеми сегментами — чтобы увидеть действие настроек сразу ([#24](https://github.com/foxtertime/claude-statusline/issues/24)).
+
+### Изменено
+- Подгонка под ширину: запас подтверждён замером (Claude Code показывает `COLUMNS − 4 − 2 × padding` колонок); иероглифы и эмодзи считаются за две колонки; строки лимитов теперь тоже ужимаются; строка 1 и сегмент модели получили дополнительные ступени сокращения ([#21](https://github.com/foxtertime/claude-statusline/issues/21)).
+- В русском режиме переведены все подписи: `Контекст`, `Кэш`, `Сейчас`, `Неделя`, `Расход`, `[чисто]`, состояния ревью и другие ([#26](https://github.com/foxtertime/claude-statusline/issues/26)).
+- Время сброса лимитов и остывания кэша форматируется без запуска `date` на bash 4.2+: отрисовка с тремя строками лимитов и кэшем ускорилась примерно с 39 до 10 мс. На bash 3.2 (macOS) по-прежнему используется `date` ([#25](https://github.com/foxtertime/claude-statusline/issues/25)).
+
+### Исправлено
+- На узком терминале путь без `/` (например, `?`, когда директория неизвестна) превращался в одно многоточие.
+- Управляющие символы в теме коммита и в пути больше не попадают в терминал: раньше коммит с escape-последовательностями мог очистить экран или сменить заголовок окна ([#34](https://github.com/foxtertime/claude-statusline/issues/34)).
+- Подгонка под ширину замедляла каждую отрисовку до 55–120 мс (Claude Code всегда передаёт `COLUMNS`); теперь 12–15 мс ([#31](https://github.com/foxtertime/claude-statusline/issues/31)).
+
 ## [1.2.0] — 2026-11-19
 
 ### Добавлено
@@ -68,7 +88,8 @@
 - Установщик `install.sh`: копирует скрипт в `~/.claude/statusline.sh`, прописывает `statusLine` в `settings.json` с бэкапом; `git` — опциональная зависимость.
 - Флаг `--version` / `-v` у скрипта.
 
-[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/foxtertime/claude-statusline/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/foxtertime/claude-statusline/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/foxtertime/claude-statusline/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/foxtertime/claude-statusline/compare/v1.0.0...v1.1.0

@@ -25,13 +25,15 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 export TZ=UTC NO_COLOR=1
 unset CLAUDE_CONFIG_DIR COLUMNS
 # Язык задаётся явно: по умолчанию он зависит от локали машины.
-export STATUSLINE_LANG=ru
+export STATUSLINE_LANG=en
 unset STATUSLINE_BAR_WIDTH STATUSLINE_WARN STATUSLINE_CRIT STATUSLINE_HIDE
 unset STATUSLINE_RESET STATUSLINE_GIT_CACHE
 export XDG_CACHE_HOME="$TMP/cache"
 mkdir -p "$HOME"
 
 passed=0 failed=0 current=""
+esc=$'\033'
+tilde='~' # буквальная тильда: в выводе она не раскрывается
 
 t() { current=$1; }
 
@@ -87,6 +89,35 @@ equals "$("$BASH" "$SCRIPT" -v)" "claude-statusline $version"
 released=$(sed -n 's/^## \[\([0-9][^]]*\)\].*/\1/p' "$ROOT/CHANGELOG.md" | head -1)
 equals "$released" "$version"
 
+# --- демо -------------------------------------------------------------------
+
+demo() { "$BASH" "$SCRIPT" --demo; }
+
+t "демо: показывает каждый сегмент и каждую строку лимитов"
+out=$(demo)
+equals "$?" "0"
+for part in "$tilde/projects/app" "feature/auth" "+2" "~1" "?3" "↑1" "≡1" "wt:auth" \
+    "#42 approved" "fix(auth): refresh expired tokens" "Opus 5.5 (1M) (high)" "fast" \
+    "@reviewer" "Ctx " "62% (620K / 1M)" "43m" "+156 −23" "Cache 91%" "NORMAL" \
+    "refactor auth middleware" "Current " "Weekly " "Spend " "\$430 / \$500"; do
+    contains "$out" "$part"
+done
+equals "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "5"
+
+t "демо: учитывает настройки и не читает stdin"
+out=$(STATUSLINE_HIDE=commit,limits,session demo </dev/null)
+lacks "$out" "fix(auth)"
+lacks "$out" "Current"
+lacks "$out" "refactor auth"
+contains "$(STATUSLINE_LANG=en demo)" "43m"
+contains "$(STATUSLINE_RESET=relative demo)" "in 2h 10m"
+equals "$(STATUSLINE_HIDE=git demo | sed -n 1p)" "$tilde/projects/app"
+lacks "$(demo)" "$esc"
+
+t "демо: ширина терминала"
+out=$(COLUMNS=60 demo)
+equals "$(line 1 "$out")" "…/app │ feature/auth +2 ~1 ?3 ↑1 ≡1 wt:auth #42 approved"
+
 # --- устойчивость к входу ---------------------------------------------------
 
 t "пустой объект"
@@ -115,7 +146,6 @@ contains "$out" "/current │"
 # --- директория -------------------------------------------------------------
 
 t "домашний каталог сокращается до ~"
-tilde='~' # буквальная тильда: в выводе она не раскрывается
 contains "$(render "$(in_dir "$HOME")")" "$tilde │"
 contains "$(render "$(in_dir "$HOME/work")")" "$tilde/work │"
 contains "$(render "$(in_dir "${HOME}2/work")")" "${HOME}2/work │"
@@ -135,7 +165,6 @@ out=$(render '{"context_window":{"used_percentage":0}}')
 contains "$out" "Ctx ──────────────────── 0%"
 
 t "цвет шкалы зависит от уровня"
-esc=$'\033'
 colored() { printf '{"context_window":{"used_percentage":%s}}' "$1" | NO_COLOR='' "$BASH" "$SCRIPT"; }
 contains "$(colored 49)" "${esc}[32m━"
 contains "$(colored 50)" "${esc}[33m━"
@@ -156,7 +185,7 @@ now_hhmm=$(printf '%02d:%02d' $((now % 86400 / 3600)) $((now % 3600 / 60)))
 t "лимиты: время сброса сегодня и в другой день"
 out=$(render "$(printf '{"rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":%s},"seven_day":{"used_percentage":81.2,"resets_at":1741635000}}}' "$now")")
 equals "$(line 3 "$out")" "Current ━━━━━─────────────── 24%  $now_hhmm"
-equals "$(line 4 "$out")" "Weekly  ━━━━━━━━━━━━━━━━──── 81%  10 мар, 19:30"
+equals "$(line 4 "$out")" "Weekly  ━━━━━━━━━━━━━━━━──── 81%  Mar 10, 19:30"
 
 t "лимиты: окна независимы, resets_at необязателен"
 out=$(render '{"rate_limits":{"seven_day":{"used_percentage":5}}}')
@@ -165,7 +194,7 @@ lacks "$out" "Current"
 
 t "лимиты: spend_limit с суммами и без, выше 100%"
 out=$(render '{"rate_limits":{"spend_limit":{"used_percentage":62.8,"resets_at":1741635000,"used_usd":314.12,"limit_usd":500}}}')
-equals "$(line 3 "$out")" "Spend   ━━━━━━━━━━━━━─────── 63%  10 мар, 19:30  \$314.12 / \$500"
+equals "$(line 3 "$out")" "Spend   ━━━━━━━━━━━━━─────── 63%  Mar 10, 19:30  \$314.12 / \$500"
 out=$(render '{"rate_limits":{"spend_limit":{"used_percentage":130}}}')
 equals "$(line 3 "$out")" "Spend   ━━━━━━━━━━━━━━━━━━━━ 130%"
 
@@ -173,15 +202,28 @@ t "лимиты: STATUSLINE_RESET=relative — время до сброса"
 # Запас в 30 секунд, чтобы результат не зависел от момента запуска.
 resets_in() { printf '{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%s}}}' "$(($(date +%s) + $1))"; }
 relative() { line 3 "$(STATUSLINE_RESET=relative render "$(resets_in "$1")")"; }
-equals "$(relative 7830)" "Current ━─────────────────── 5%  через 2 ч 10 мин"
-equals "$(relative 273630)" "Current ━─────────────────── 5%  через 3 д 4 ч"
-equals "$(relative 330)" "Current ━─────────────────── 5%  через 5 мин"
-equals "$(relative 20)" "Current ━─────────────────── 5%  через <1 мин"
-equals "$(relative -500)" "Current ━─────────────────── 5%  через <1 мин"
+equals "$(relative 7830)" "Current ━─────────────────── 5%  in 2h 10m"
+equals "$(relative 273630)" "Current ━─────────────────── 5%  in 3d 4h"
+equals "$(relative 330)" "Current ━─────────────────── 5%  in 5m"
+equals "$(relative 20)" "Current ━─────────────────── 5%  in <1m"
+equals "$(relative -500)" "Current ━─────────────────── 5%  in <1m"
 equals "$(STATUSLINE_LANG=en relative 7830)" "Current ━─────────────────── 5%  in 2h 10m"
 equals "$(STATUSLINE_LANG=en relative 20)" "Current ━─────────────────── 5%  in <1m"
 resets_now=$(printf '{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%s}}}' "$now")
 equals "$(line 3 "$(STATUSLINE_RESET=bogus render "$resets_now")")" "Current ━─────────────────── 5%  $now_hhmm"
+
+t "лимиты: встроенное форматирование времени совпадает с date"
+# На bash 4.2+ время форматирует printf '%(...)T', на bash 3.2 — date;
+# _STATUSLINE_FORCE_DATE включает путь через date и на новом bash.
+for zone in UTC Asia/Tokyo America/Los_Angeles; do
+    for ts in "$now" $((now + 3 * 86400)) 1741635000 1767225599; do
+        json=$(printf '{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%s}}}' "$ts")
+        builtin=$(printf '%s' "$json" | TZ=$zone "$BASH" "$SCRIPT")
+        fallback=$(printf '%s' "$json" | TZ=$zone _STATUSLINE_FORCE_DATE=1 "$BASH" "$SCRIPT")
+        equals "$builtin" "$fallback"
+    done
+done
+equals "$(line 3 "$(_STATUSLINE_FORCE_DATE=1 render '{"rate_limits":{"seven_day":{"used_percentage":5,"resets_at":1741635000}}}')")" "Weekly  ━─────────────────── 5%  Mar 10, 19:30"
 
 t "лимиты: seven_day_sonnet больше не выводится"
 lacks "$(render '{"rate_limits":{"seven_day_sonnet":{"used_percentage":8}}}')" "Sonnet"
@@ -247,6 +289,10 @@ equals "$(line 1 "$(STATUSLINE_HIDE=commit render "$(in_dir "$REPO")")")" "$REPO
 
 # --- ширина терминала -------------------------------------------------------
 
+t "ширина: путь без / не превращается в многоточие"
+equals "$(line 1 "$(COLUMNS=20 render '{}')")" "? │ [no git]"
+equals "$(line 1 "$(COLUMNS=20 render '{"cwd":"relative"}')")" "relative │ [no git]"
+
 t "ширина: строка 1 упрощается по шагам"
 mkdir -p "$HOME/work/proj"
 git init -q -b main "$HOME/work/proj/app"
@@ -284,9 +330,9 @@ cost_line() {
 }
 
 t "cost: стоимость, длительность, строки"
-equals "$(cost_line '{"total_cost_usd":1.2351,"total_duration_ms":2280000,"total_lines_added":156,"total_lines_removed":23}')" "M │ \$1.24 · 38 мин · +156 −23"
+equals "$(cost_line '{"total_cost_usd":1.2351,"total_duration_ms":2280000,"total_lines_added":156,"total_lines_removed":23}')" "M │ \$1.24 · 38m · +156 −23"
 equals "$(STATUSLINE_LANG=en cost_line '{"total_cost_usd":12,"total_duration_ms":3900000}')" "M │ \$12.00 · 1h 5m"
-equals "$(cost_line '{"total_cost_usd":0.05,"total_duration_ms":45000}')" "M │ \$0.05 · 45 с"
+equals "$(cost_line '{"total_cost_usd":0.05,"total_duration_ms":45000}')" "M │ \$0.05 · 45s"
 equals "$(STATUSLINE_LANG=en cost_line '{"total_duration_ms":273600000}')" "M │ 3d 4h"
 equals "$(cost_line '{"total_lines_added":0,"total_lines_removed":4}')" "M │ +0 −4"
 
@@ -296,7 +342,7 @@ equals "$(cost_line '{"total_cost_usd":0,"total_duration_ms":0,"total_lines_adde
 equals "$(STATUSLINE_HIDE=cost cost_line '{"total_cost_usd":1}')" "M"
 
 t "cost: по подписке сумма в долларах не показывается"
-equals "$(cost_line '{"total_cost_usd":1.5,"total_duration_ms":60000}' '"rate_limits":{"five_hour":{"used_percentage":1}}')" "M │ 1 мин"
+equals "$(cost_line '{"total_cost_usd":1.5,"total_duration_ms":60000}' '"rate_limits":{"five_hour":{"used_percentage":1}}')" "M │ 1m"
 
 # --- prompt cache -----------------------------------------------------------
 
@@ -311,10 +357,10 @@ warm_until() { printf '{"caching_observed":true,"warm":true,"hit_ratio":0.914,"e
 
 t "cache: тёплый кэш — доля попаданий и время остывания"
 equals "$(cache_line "$(warm_until "$now")")" "M │ Cache 91% · $now_hhmm"
-equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":null,"expires_at":1741635000}')" "M │ Cache 10 мар, 19:30"
+equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":null,"expires_at":1741635000}')" "M │ Cache Mar 10, 19:30"
 equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":0.5,"expires_at":null}')" "M │ Cache 50%"
 equals "$(cache_line '{"caching_observed":true,"warm":true}')" "M │ Cache warm"
-equals "$(STATUSLINE_RESET=relative cache_line "$(warm_until $((now + 270)))")" "M │ Cache 91% · через 4 мин"
+equals "$(STATUSLINE_RESET=relative cache_line "$(warm_until $((now + 270)))")" "M │ Cache 91% · in 4m"
 
 t "cache: остывший кэш"
 equals "$(cache_line '{"caching_observed":true,"warm":false,"hit_ratio":0.9,"expires_at":null}')" "M │ Cache cold"
@@ -414,6 +460,54 @@ plain=$(line 1 "$(STATUSLINE_HIDE=commit render "$(with_pr "$pr")")")
 linked=$(line 1 "$(STATUSLINE_HIDE=commit NO_COLOR='' COLUMNS=$((${#plain} + 4)) render "$(with_pr "$pr")")")
 contains "$linked" "$REPO"
 
+# width <строка> — ширина в колонках терминала (широкие символы — две)
+cols() { python3 -I -c 'import sys,unicodedata as u; s=sys.argv[1]; print(sum(2 if u.east_asian_width(c) in "WF" else 1 for c in s))' "$1"; }
+
+t "ширина: STATUSLINE_PADDING уменьшает доступную ширину на 2 × padding"
+equals "$(width 30)" "…/app │ feature/v… [clean]"
+equals "$(line 1 "$(COLUMNS=36 STATUSLINE_PADDING=3 render "$app")")" "…/app │ feature/v… [clean]"
+equals "$(line 1 "$(COLUMNS=30 STATUSLINE_PADDING=abc render "$app")")" "…/app │ feature/v… [clean]"
+
+t "ширина: широкие символы занимают две колонки"
+mkdir -p "$TMP/data/项目"
+equals "$(line 1 "$(COLUMNS=22 render "$(in_dir "$TMP/data/项目")")")" "…/项目 │ [no git]"
+# Подгонка включается с COLUMNS ≥ 20, поэтому строки здесь длиннее.
+rockets='{"model":{"display_name":"M"},"session_name":"🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀"}'
+equals "$(line 2 "$(COLUMNS=26 render "$rockets")")" "M"
+equals "$(line 2 "$(COLUMNS=28 render "$rockets")")" "M │ 🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀"
+equals "$(line 2 "$(COLUMNS=26 render '{"model":{"display_name":"M"},"session_name":"абвгдежзийклмнопрс"}')")" "M │ абвгдежзийклмнопрс"
+
+t "ширина: строки лимитов теряют примечание, время сброса, затем укорачивают шкалу"
+spend='{"rate_limits":{"spend_limit":{"used_percentage":86,"resets_at":1741635000,"used_usd":430,"limit_usd":500}}}'
+equals "$(line 3 "$(render "$spend")")" "Spend   ━━━━━━━━━━━━━━━━━─── 86%  Mar 10, 19:30  \$430 / \$500"
+equals "$(line 3 "$(COLUMNS=51 render "$spend")")" "Spend   ━━━━━━━━━━━━━━━━━─── 86%  Mar 10, 19:30"
+equals "$(line 3 "$(COLUMNS=50 render "$spend")")" "Spend   ━━━━━━━━━━━━━━━━━─── 86%"
+equals "$(line 3 "$(COLUMNS=40 render "$spend")")" "Spend   ━━━━━━━━━━━━━━━━━─── 86%"
+equals "$(line 3 "$(COLUMNS=30 render "$spend")")" "Spend   ━━━━━━━━━━━━── 86%"
+equals "$(line 3 "$(COLUMNS=20 render "$spend")")" "Spend   ━━━━─ 86%"
+
+t "ширина: ни одна строка демо не шире доступной"
+# Ниже ~40 колонок самый короткий вариант строки может не влезть — тогда её
+# обрежет сам Claude Code.
+for c in 40 50 60 80 120; do
+    for opts in "" "STATUSLINE_LANG=ru" "STATUSLINE_ASCII=1" "STATUSLINE_PADDING=2"; do
+        max=$((c - 4))
+        case $opts in STATUSLINE_PADDING=2) max=$((c - 8)) ;; esac
+        while IFS= read -r row; do
+            w=$(cols "$row")
+            if [ "$w" -gt "$max" ]; then fail "COLUMNS=$c $opts: $w > $max" "$row"; else ok; fi
+        done <<<"$(env $opts COLUMNS=$c "$BASH" "$SCRIPT" --demo)"
+    done
+done
+
+t "ширина: сегмент модели теряет агента, fast и effort последними"
+head='{"model":{"display_name":"Opus"},"effort":{"level":"high"},"fast_mode":true,"agent":{"name":"rev"},"context_window":{"used_percentage":5}}'
+equals "$(line 2 "$(COLUMNS=30 render "$head")")" "Opus (high) fast @rev"
+equals "$(line 2 "$(COLUMNS=24 render "$head")")" "Opus (high) fast"
+equals "$(line 2 "$(COLUMNS=20 STATUSLINE_PADDING=1 render "$head")")" "Opus (high)"
+equals "$(line 2 "$(COLUMNS=20 STATUSLINE_PADDING=3 render "$head")")" "Opus"
+equals "$(line 2 "$(render "$head")")" "Opus (high) fast @rev │ Ctx ━─────────────────── 5%"
+
 t "git: каталог вне репозитория"
 mkdir -p "$TMP/plain"
 contains "$(render "$(in_dir "$TMP/plain")")" "[no git]"
@@ -511,6 +605,124 @@ equals "$(cached s1)" "$REPO │ main ?2"
 equals "$(cached '../../evil')" "$REPO │ main ?2"
 if [ -e "$TMP/evil" ] || [ -e "$XDG_CACHE_HOME/evil" ]; then fail "запись вне каталога кэша"; else ok; fi
 
+# --- раскладка --------------------------------------------------------------
+
+layout() { STATUSLINE_LAYOUT=$1 "$BASH" "$SCRIPT" --demo; }
+
+t "раскладка: по умолчанию вывод не меняется"
+equals "$(layout '')" "$(demo)"
+equals "$(layout 'context,cost,cache,vim,session')" "$(demo)"
+
+t "раскладка: порядок сегментов, неназванные — следом в обычном порядке"
+equals "$(line 2 "$(layout 'cache,context')" | sed 's/ │ /|/g' | cut -d'|' -f2-)" \
+    "$(line 2 "$(demo)" | sed 's/ │ /|/g' | awk -F'|' '{print $4 "|" $2 "|" $3 "|" $5 "|" $6}')"
+contains "$(line 2 "$(layout 'session')")" "@reviewer │ refactor auth middleware │ Ctx "
+
+t "раскладка: / переносит сегменты на отдельную строку перед лимитами"
+out=$(layout 'context,cost/cache,vim,session')
+equals "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "6"
+contains "$(line 2 "$out")" "62% (620K / 1M) │ 43m · +156 −23"
+lacks "$(line 2 "$out")" "Cache"
+equals "$(line 3 "$out" | cut -d'│' -f2-)" " NORMAL │ refactor auth middleware"
+contains "$(line 3 "$out")" "Cache 91%"
+contains "$(line 4 "$out")" "Current "
+equals "$(line 3 "$(layout 'context/cost')" | cut -c1-3)" "43m"
+
+t "раскладка: пустая отдельная строка не печатается, ширина соблюдается"
+out=$(STATUSLINE_HIDE=cache,vim,session layout 'context,cost/cache,vim,session')
+equals "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "5"
+out=$(COLUMNS=40 layout 'context/cost,cache,vim,session')
+contains "$(line 3 "$out")" "43m · +156 −23"
+lacks "$(line 3 "$out")" "refactor"
+
+t "раскладка: неизвестные имена и повторы игнорируются"
+equals "$(layout 'bogus,context/zzz')" "$(demo)"
+equals "$(layout 'context,context,cost')" "$(demo)"
+equals "$(layout '///')" "$(demo)"
+
+t "раскладка: compact — одна строка"
+out=$(layout compact)
+equals "$out" "…/app │ feature/auth +2 ~1 ?3 │ Opus 5.5 (1M) (high) │ Ctx 62% │ 5h 34% │ 7d 71% │ Spend 86%"
+equals "$(COLUMNS=66 layout compact)" "…/app │ feature/auth +2 ~1 ?3 │ Opus 5.5 (1M) (high) │ Ctx 62%"
+equals "$(COLUMNS=60 layout compact)" "…/app │ feature/auth +2 ~1 ?3 │ Opus 5.5 (1M) (high)"
+equals "$(STATUSLINE_HIDE=limits layout compact)" "…/app │ feature/auth +2 ~1 ?3 │ Opus 5.5 (1M) (high) │ Ctx 62%"
+equals "$(STATUSLINE_HIDE=weekly,git layout compact)" "…/app │ Opus 5.5 (1M) (high) │ Ctx 62% │ 5h 34% │ Spend 86%"
+equals "$(STATUSLINE_LANG=ru layout compact | cut -d'│' -f4-)" " Контекст 62% │ 5ч 34% │ 7д 71% │ Расход 86%"
+contains "$(NO_COLOR='' layout compact)" "${esc}[33m62%"
+equals "$(printf '{}' | STATUSLINE_LAYOUT=compact "$BASH" "$SCRIPT")" "? │ [no git] │ ?"
+
+# --- русский режим, цвета, ASCII --------------------------------------------
+
+ru() { STATUSLINE_LANG=ru "$@"; }
+
+t "русский режим: все подписи переведены"
+out=$(ru demo)
+for part in "#42 одобрен" "быстро" "Контекст " "43 мин" "Кэш 91%" "2 часа назад" \
+    "Сейчас " "Неделя " "Расход "; do
+    contains "$out" "$part"
+done
+for word in Ctx Cache Current Weekly Spend approved fast cold warm clean "no git"; do
+    lacks "$out" "$word"
+done
+
+t "русский режим: прочие подписи, даты и длительности"
+contains "$(ru render "$(in_dir "$TMP")")" "[нет git]"
+new_repo ru_clean
+contains "$(ru render "$(in_dir "$REPO")")" "main [чисто]"
+contains "$(ru render '{"prompt_cache":{"caching_observed":true,"warm":false}}')" "Кэш остыл"
+contains "$(ru render '{"prompt_cache":{"caching_observed":true,"warm":true}}')" "Кэш тёплый"
+for state in "changes_requested правки" "pending ждёт" "draft черновик"; do
+    contains "$(ru render "$(printf '{"workspace":{"current_dir":"%s"},"pr":{"number":1,"review_state":"%s"}}' "$REPO" "${state%% *}")")" "#1 ${state#* }"
+done
+equals "$(line 3 "$(ru render '{"rate_limits":{"seven_day":{"used_percentage":5,"resets_at":1741635000}}}')")" "Неделя ━─────────────────── 5%  10 мар, 19:30"
+equals "$(line 3 "$(ru env STATUSLINE_RESET=relative "$BASH" "$SCRIPT" <<<"$(resets_in 7830)")")" "Сейчас ━─────────────────── 5%  через 2 ч 10 мин"
+equals "$(ru cost_line '{"total_duration_ms":273600000}')" "M │ 3 д 4 ч"
+equals "$(ru cost_line '{"total_duration_ms":45000}')" "M │ 45 с"
+
+t "русский режим: столбец подписей лимитов выровнен"
+out=$(ru demo)
+for n in 3 4 5; do
+    row=$(line "$n" "$out")
+    equals "${row:6:1}" " "
+    equals "${row:7:1}" "━"
+done
+
+t "цвета: светлая тема и переопределение ролей"
+coloured() { NO_COLOR='' "$@" "$BASH" "$SCRIPT" --demo; }
+contains "$(coloured env)" "${esc}[2;37m"
+contains "$(coloured env STATUSLINE_THEME=light)" "${esc}[90m"
+lacks "$(coloured env STATUSLINE_THEME=light)" "${esc}[2;37m"
+contains "$(coloured env STATUSLINE_COLOR_DIR='1;34')" "${esc}[1;34m$tilde/projects/app"
+contains "$(coloured env STATUSLINE_COLOR_OK=92)" "${esc}[92m+2"
+contains "$(coloured env STATUSLINE_COLOR_WARN=93)" "${esc}[93m━"
+equals "$(coloured env STATUSLINE_COLOR_DIR='1;34m;rm -rf' STATUSLINE_THEME=bogus)" "$(coloured env)"
+equals "$(NO_COLOR=1 STATUSLINE_COLOR_DIR='1;34' demo)" "$(demo)"
+
+t "ASCII: только ASCII-символы, кроме данных пользователя"
+out=$(STATUSLINE_ASCII=1 demo)
+non_ascii=$(printf '%s' "$out" | LC_ALL=C grep -c '[^ -~]')
+equals "$non_ascii" "0"
+contains "$(line 1 "$out")" "$tilde/projects/app | feature/auth +2 ~1 ?3 ^1 =1"
+contains "$out" "Current ###"
+contains "$out" "+156 -23"
+contains "$(STATUSLINE_ASCII=1 COLUMNS=60 demo)" "./app |"
+equals "$(STATUSLINE_ASCII=0 demo)" "$(demo)"
+
+# --- управляющие символы ----------------------------------------------------
+
+t "управляющие символы в теме коммита и пути не попадают в вывод"
+new_repo ctrl "$(printf 'evil \033[2J\033]0;pwned\007 subject')"
+out=$(line 1 "$(render "$(in_dir "$REPO")")")
+contains "$out" "│ evil  [2J ]0;pwned  subject · "
+lacks "$out" "$esc"
+lacks "$out" $'\a'
+odd="$TMP/odd$(printf '\033')[31mdir"
+mkdir -p "$odd"
+git init -q -b main "$odd"
+out=$(render "$(jq -nc --arg d "$odd" '{workspace:{current_dir:$d}}')")
+contains "$out" "odd [31mdir │ main [clean]"
+lacks "$out" "$esc"
+
 # --- установщик -------------------------------------------------------------
 
 install() { "$BASH" "$INSTALLER" "$@" 2>&1; }
@@ -550,6 +762,98 @@ equals "$(cat "$settings")" "not json"
 t "install: неизвестный флаг"
 out=$(install --bogus)
 equals "$?" "2"
+
+t "install: --set, --refresh и --padding пишут настройки"
+export CLAUDE_CONFIG_DIR="$TMP/opts"
+settings="$CLAUDE_CONFIG_DIR/settings.json"
+out=$(install --set STATUSLINE_LANG=ru --set "STATUSLINE_HIDE=commit,spend" --refresh 60 --padding 2)
+equals "$?" "0"
+equals "$(jq -c .env "$settings")" '{"STATUSLINE_LANG":"ru","STATUSLINE_HIDE":"commit,spend","STATUSLINE_PADDING":"2"}'
+equals "$(jq -c '[.statusLine.refreshInterval, .statusLine.padding]' "$settings")" '[60,2]'
+contains "$out" "после перезапуска"
+
+t "install: повторная установка сохраняет опции, --unset и 0 их убирают"
+install >/dev/null
+equals "$(jq -c .env "$settings")" '{"STATUSLINE_LANG":"ru","STATUSLINE_HIDE":"commit,spend","STATUSLINE_PADDING":"2"}'
+install --unset STATUSLINE_HIDE --refresh 0 --padding 0 >/dev/null
+equals "$(jq -c .env "$settings")" '{"STATUSLINE_LANG":"ru"}'
+equals "$(jq -c '.statusLine | keys' "$settings")" '["command","type"]'
+install --unset STATUSLINE_LANG >/dev/null
+equals "$(jq -c 'has("env")' "$settings")" "false"
+
+t "install: STATUSLINE_PADDING следует за statusLine.padding, заданным вручную"
+jq '.statusLine.padding = 3' "$settings" >"$settings.tmp" && mv "$settings.tmp" "$settings"
+install >/dev/null
+equals "$(jq -r .env.STATUSLINE_PADDING "$settings")" "3"
+
+t "install: некорректные настройки отклоняются, файл не меняется"
+before=$(cat "$settings")
+for args in "--set BOGUS=1" "--set STATUSLINE_BOGUS=1" "--set STATUSLINE_LANG" \
+    "--set STATUSLINE_PADDING=2" "--unset LANG" "--refresh x" "--padding -1" \
+    "--check --set STATUSLINE_LANG=en" "--uninstall --refresh 5"; do
+    # shellcheck disable=SC2086  # аргументы разделяются намеренно
+    out=$(install $args)
+    if [ "$?" -eq 1 ]; then ok; else fail "ожидался код 1: $args" "$out"; fi
+done
+equals "$(cat "$settings")" "$before"
+
+t "install: --uninstall убирает и опции, чужие env не трогает"
+jq '.env.OTHER = "keep"' "$settings" >"$settings.tmp" && mv "$settings.tmp" "$settings"
+install --set STATUSLINE_LANG=en --refresh 30 >/dev/null
+install --uninstall >/dev/null
+equals "$(jq -c . "$settings")" '{"env":{"OTHER":"keep"}}'
+
+t "install: --check"
+install >/dev/null
+out=$(install --check)
+equals "$?" "0"
+contains "$out" "Проблем не найдено."
+contains "$out" "установлена версия $version"
+jq '.env.STATUSLINE_BOGUS = "1" | .statusLine.padding = 2' "$settings" >"$settings.tmp" && mv "$settings.tmp" "$settings"
+out=$(install --check)
+equals "$?" "0"
+contains "$out" "[внимание] неизвестная опция STATUSLINE_BOGUS"
+contains "$out" "STATUSLINE_PADDING = 0"
+rm "$CLAUDE_CONFIG_DIR/statusline.sh"
+out=$(install --check)
+equals "$?" "1"
+contains "$out" "не найден или не исполняемый"
+echo 'not json' >"$settings"
+out=$(install --check)
+equals "$?" "1"
+contains "$out" "не валидный JSON"
+
+t "install: --set знает все опции статуслайна"
+# shellcheck disable=SC2016  # ищем текст «${STATUSLINE_…» в скрипте
+read_options=$(grep -o '\${STATUSLINE_[A-Z_]*' "$SCRIPT" | sed 's/^\${STATUSLINE_//' | grep -v '^PADDING$' | sort -u)
+roles=$(sed -n 's/^ *for role in \(.*\); do$/\1/p' "$SCRIPT")
+known=" $(sed -n '/^KNOWN_OPTIONS="/,/"$/p' "$INSTALLER" | tr -d '"' | sed 's/^KNOWN_OPTIONS=//' | tr -s ' \n' '  ') "
+for option in $read_options; do
+    contains "$known" " $option "
+done
+for role in $roles; do
+    contains "$known" " COLOR_$role "
+done
+
+t "install: без копии репозитория скачивает релиз и сверяет SHA256SUMS"
+release="$TMP/release" standalone="$TMP/standalone"
+mkdir -p "$release" "$standalone"
+cp "$SCRIPT" "$release/statusline.sh"
+cp "$INSTALLER" "$standalone/install.sh"
+sha() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
+(cd "$release" && sha statusline.sh >SHA256SUMS)
+export CLAUDE_CONFIG_DIR="$TMP/downloaded"
+out=$(STATUSLINE_DOWNLOAD_BASE="file://$release" "$BASH" "$standalone/install.sh" 2>&1)
+equals "$?" "0"
+if cmp -s "$SCRIPT" "$CLAUDE_CONFIG_DIR/statusline.sh"; then ok; else fail "скачанный файл отличается"; fi
+echo "# подмена" >>"$release/statusline.sh"
+rm -rf "$CLAUDE_CONFIG_DIR"
+out=$(STATUSLINE_DOWNLOAD_BASE="file://$release" "$BASH" "$standalone/install.sh" 2>&1)
+equals "$?" "1"
+contains "$out" "контрольная сумма"
+if [ -e "$CLAUDE_CONFIG_DIR" ]; then fail "при неверной сумме что-то записано"; else ok; fi
+out=$(STATUSLINE_RELEASE=main "$BASH" "$standalone/install.sh" 2>&1)
+equals "$?" "1"
 
 # ----------------------------------------------------------------------------
 

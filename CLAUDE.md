@@ -27,17 +27,21 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 
 - `statusline.sh` — the product. `read_input` (one jq call) → `read_git` (one
   `git status --porcelain=v2`) → `render_*` → `main`. Holds `VERSION`.
-- `install.sh` — copies the script into the Claude config dir and merges the
-  `statusLine` key into `settings.json`; `--uninstall` reverses it.
+- `install.sh` — copies the script into the Claude config dir (downloading
+  it from the release and checking `SHA256SUMS` when run without a repo
+  copy), merges `statusLine` and `STATUSLINE_*` options from `--set` into
+  `settings.json`, keeps `STATUSLINE_PADDING` in sync with
+  `statusLine.padding`; `--check` diagnoses, `--uninstall` reverses all of it.
+  A new `STATUSLINE_*` option must be added to `KNOWN_OPTIONS` there.
 - `tests/run.sh` — black-box tests for both scripts.
 - `.githooks/commit-msg`, `.github/workflows/` — commit lint, CI, release.
 
 ## Rules for statusline.sh
 
 - **It runs after every assistant message, so forks are the cost.** The
-  baseline is one `jq` and two `git` processes, plus two `date` calls per
-  absolute reset time shown. Helpers return through `REPLY` instead of
-  `$(...)`. Do not add a subprocess per field.
+  baseline is one `jq` and two `git` processes; times are formatted with
+  `format_time`, which needs no process on bash 4.2+. Helpers return through
+  `REPLY` instead of `$(...)`. Do not add a subprocess per field.
 - The git cache (`STATUSLINE_GIT_CACHE`) is read with `read` and validated,
   never evaluated; a new git field must be added to `reset_git`,
   `load_git_cache` and `save_git_cache` together, in the same order.
@@ -54,13 +58,30 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   `echo -e` on output: paths, branch names and commit subjects are untrusted.
   Colors are real escape bytes (`$'\033'`), printed with `%s`.
 - **Portability:** bash 3.2 (macOS system bash) and both GNU and BSD
-  userlands. No associative arrays, `${var,,}`, `mapfile`, `printf '%(…)T'`,
-  or GNU-only flags without a BSD fallback.
-- **Lines must fit `COLUMNS`.** Line 1 degrades through the levels in
-  `render_location`; line 2 is the `SEGMENTS` array, most important first,
-  and `join_fit` drops from the end. Add a new line-2 item as a segment in
-  priority order, never by appending to an existing one.
-- All color variables must be cleared in the `NO_COLOR` block.
+  userlands. No associative arrays, `${var,,}`, `mapfile`, or GNU-only flags
+  without a BSD fallback. Newer-bash features are allowed only behind a
+  version check with a 3.2 fallback, like `printf '%(…)T'` in `format_time`;
+  keep a test that forces the fallback (`_STATUSLINE_FORCE_DATE=1`), because
+  the macOS job is the only place the 3.2 path runs naturally.
+- **Lines must fit `COLUMNS − 4 − 2 × padding`**, the width Claude Code
+  actually shows (measured; longer lines are cut with an ellipsis). Line 1
+  degrades through the levels in `render_location`; line 2 is the `SEGMENTS`
+  array, most important first, and `join_fit` drops from the end, then
+  shortens the model segment through `HEAD_FORMS`; limit rows go through
+  `fit_limit`. A new line-2 item is a segment: add its name to
+  `LINE2_SEGMENTS` (the default order) and a branch to `render_segment`, so
+  `STATUSLINE_LAYOUT` can place it; never append to an existing segment. Widths come from `visible_len`, which counts
+  wide characters as two columns. Benchmark with `COLUMNS` set — that is the
+  real path. No extglob or other backtracking patterns on long strings:
+  `${s//$ESC\[*([0-9;])m/}` once cost 25 ms per call (#31); strip known
+  strings literally instead.
+- All color variables must be cleared in the `NO_COLOR` block. Colours come
+  from the `R_*` roles (themes and `STATUSLINE_COLOR_*` overrides); a new
+  colour is a new role, documented in the README role table.
+- **No literal labels or glyphs in render code.** Every word goes into the
+  labels block in both languages (`L_*`), every non-ASCII symbol into the
+  glyphs block with an ASCII twin (`G_*`). The tests pin `STATUSLINE_LANG=en`;
+  Russian output is checked in its own section.
 - **Options are `STATUSLINE_*` environment variables**, validated in the
   configuration block; an invalid value silently keeps the default. A new
   segment gets a name for `STATUSLINE_HIDE` (checked with `shown <name>`) and
@@ -75,10 +96,30 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   commit or PR body with `Closes #<n>` (or `Refs #<n>` if it only partly
   addresses it). Follow-up work you notice but don't do goes into a new issue,
   not a TODO comment.
-- **Gitflow.** Branch `feature/<name>` from `develop`, merge back with
-  `--no-ff`. Never commit directly to `main` or `develop`. Releases go through
-  `release/X.Y.Z`, hotfixes through `hotfix/X.Y.Z` from `main`. The exact
-  release commands are in CONTRIBUTING.md.
+- **Every branch is merged through a pull request.** No local merges into
+  `develop` or `main`, and no direct pushes to them — this covers feature,
+  release and hotfix branches alike. The flow is: issue → branch → push →
+  `gh pr create --base develop` → wait for CI (`gh pr checks --watch`) →
+  `gh pr merge --merge --delete-branch`. Always a merge commit, never squash
+  or rebase: Gitflow history keeps the branch visible. One PR per issue; fill
+  in the PR template. `Closes #<n>` only auto-closes on merges into `main`,
+  so after a PR lands in `develop`, close the issue yourself with a comment
+  pointing at the PR.
+- **`main` and `develop` are protected on GitHub**, admins included: a direct
+  push is rejected with `GH006`, force pushes and deletion are off, and only
+  merge commits are allowed. A rejection means the change needs a PR — never
+  disable or loosen the protection to get something through; ask the user.
+  Tags are not protected, so the release tag is still pushed directly.
+- **Required checks are matched by job name:** `lint`,
+  `test (ubuntu-latest, bash)`, `test (macos-latest, /bin/bash)`, `commits`.
+  Renaming a CI job or changing the test matrix leaves every PR waiting on a
+  check that no longer exists. Change the names in the same PR as the
+  protection settings (`gh api repos/{owner}/{repo}/branches/<branch>/protection`),
+  for both branches, and tell the user.
+- **Gitflow.** Branch `feature/<n>-<name>` from `develop`. Releases go
+  through `release/X.Y.Z`, hotfixes through `hotfix/X.Y.Z` from `main`; each
+  of those needs two PRs, one into `main` and one into `develop`. The exact
+  release steps are in CONTRIBUTING.md.
 - **Conventional Commits**, enforced by the hook and CI:
   `type(scope): description` — types `feat fix docs refactor perf test build ci
   chore revert`, scopes `statusline install release`, subject ≤ 72 chars, no
@@ -86,11 +127,13 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 - **SemVer.** `VERSION` in `statusline.sh` is the single source of truth and a
   test checks it against the newest `CHANGELOG.md` section. Only bump it on a
   release branch.
-- **Wait for CI before closing an issue.** The macOS job runs the system
-  bash 3.2, which cannot be reproduced on Linux; push the feature branch as a
-  PR to `develop` and merge only when it is green. In tests, build JSON with
+- **Merge only when CI is green.** The macOS job runs the system bash 3.2,
+  which cannot be reproduced on Linux, so local checks are not enough. In
+  tests, build JSON with
   `printf` and a single-quoted format — `\"` inside `"$(...)"` is parsed
   differently by bash 3.2.
 - A behavior change needs a test in `tests/run.sh` and a line under
   `[Unreleased]` in `CHANGELOG.md` (Russian, Keep a Changelog format).
-- Do not push, tag, or publish a release without being asked.
+- Pushing feature branches, opening and merging their PRs and closing their
+  issues is part of doing the work. Do not tag or publish a release without
+  being asked.
