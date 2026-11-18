@@ -763,6 +763,98 @@ t "install: неизвестный флаг"
 out=$(install --bogus)
 equals "$?" "2"
 
+t "install: --set, --refresh и --padding пишут настройки"
+export CLAUDE_CONFIG_DIR="$TMP/opts"
+settings="$CLAUDE_CONFIG_DIR/settings.json"
+out=$(install --set STATUSLINE_LANG=ru --set "STATUSLINE_HIDE=commit,spend" --refresh 60 --padding 2)
+equals "$?" "0"
+equals "$(jq -c .env "$settings")" '{"STATUSLINE_LANG":"ru","STATUSLINE_HIDE":"commit,spend","STATUSLINE_PADDING":"2"}'
+equals "$(jq -c '[.statusLine.refreshInterval, .statusLine.padding]' "$settings")" '[60,2]'
+contains "$out" "после перезапуска"
+
+t "install: повторная установка сохраняет опции, --unset и 0 их убирают"
+install >/dev/null
+equals "$(jq -c .env "$settings")" '{"STATUSLINE_LANG":"ru","STATUSLINE_HIDE":"commit,spend","STATUSLINE_PADDING":"2"}'
+install --unset STATUSLINE_HIDE --refresh 0 --padding 0 >/dev/null
+equals "$(jq -c .env "$settings")" '{"STATUSLINE_LANG":"ru"}'
+equals "$(jq -c '.statusLine | keys' "$settings")" '["command","type"]'
+install --unset STATUSLINE_LANG >/dev/null
+equals "$(jq -c 'has("env")' "$settings")" "false"
+
+t "install: STATUSLINE_PADDING следует за statusLine.padding, заданным вручную"
+jq '.statusLine.padding = 3' "$settings" >"$settings.tmp" && mv "$settings.tmp" "$settings"
+install >/dev/null
+equals "$(jq -r .env.STATUSLINE_PADDING "$settings")" "3"
+
+t "install: некорректные настройки отклоняются, файл не меняется"
+before=$(cat "$settings")
+for args in "--set BOGUS=1" "--set STATUSLINE_BOGUS=1" "--set STATUSLINE_LANG" \
+    "--set STATUSLINE_PADDING=2" "--unset LANG" "--refresh x" "--padding -1" \
+    "--check --set STATUSLINE_LANG=en" "--uninstall --refresh 5"; do
+    # shellcheck disable=SC2086  # аргументы разделяются намеренно
+    out=$(install $args)
+    if [ "$?" -eq 1 ]; then ok; else fail "ожидался код 1: $args" "$out"; fi
+done
+equals "$(cat "$settings")" "$before"
+
+t "install: --uninstall убирает и опции, чужие env не трогает"
+jq '.env.OTHER = "keep"' "$settings" >"$settings.tmp" && mv "$settings.tmp" "$settings"
+install --set STATUSLINE_LANG=en --refresh 30 >/dev/null
+install --uninstall >/dev/null
+equals "$(jq -c . "$settings")" '{"env":{"OTHER":"keep"}}'
+
+t "install: --check"
+install >/dev/null
+out=$(install --check)
+equals "$?" "0"
+contains "$out" "Проблем не найдено."
+contains "$out" "установлена версия $version"
+jq '.env.STATUSLINE_BOGUS = "1" | .statusLine.padding = 2' "$settings" >"$settings.tmp" && mv "$settings.tmp" "$settings"
+out=$(install --check)
+equals "$?" "0"
+contains "$out" "[внимание] неизвестная опция STATUSLINE_BOGUS"
+contains "$out" "STATUSLINE_PADDING = 0"
+rm "$CLAUDE_CONFIG_DIR/statusline.sh"
+out=$(install --check)
+equals "$?" "1"
+contains "$out" "не найден или не исполняемый"
+echo 'not json' >"$settings"
+out=$(install --check)
+equals "$?" "1"
+contains "$out" "не валидный JSON"
+
+t "install: --set знает все опции статуслайна"
+# shellcheck disable=SC2016  # ищем текст «${STATUSLINE_…» в скрипте
+read_options=$(grep -o '\${STATUSLINE_[A-Z_]*' "$SCRIPT" | sed 's/^\${STATUSLINE_//' | grep -v '^PADDING$' | sort -u)
+roles=$(sed -n 's/^ *for role in \(.*\); do$/\1/p' "$SCRIPT")
+known=" $(sed -n '/^KNOWN_OPTIONS="/,/"$/p' "$INSTALLER" | tr -d '"' | sed 's/^KNOWN_OPTIONS=//' | tr -s ' \n' '  ') "
+for option in $read_options; do
+    contains "$known" " $option "
+done
+for role in $roles; do
+    contains "$known" " COLOR_$role "
+done
+
+t "install: без копии репозитория скачивает релиз и сверяет SHA256SUMS"
+release="$TMP/release" standalone="$TMP/standalone"
+mkdir -p "$release" "$standalone"
+cp "$SCRIPT" "$release/statusline.sh"
+cp "$INSTALLER" "$standalone/install.sh"
+sha() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
+(cd "$release" && sha statusline.sh >SHA256SUMS)
+export CLAUDE_CONFIG_DIR="$TMP/downloaded"
+out=$(STATUSLINE_DOWNLOAD_BASE="file://$release" "$BASH" "$standalone/install.sh" 2>&1)
+equals "$?" "0"
+if cmp -s "$SCRIPT" "$CLAUDE_CONFIG_DIR/statusline.sh"; then ok; else fail "скачанный файл отличается"; fi
+echo "# подмена" >>"$release/statusline.sh"
+rm -rf "$CLAUDE_CONFIG_DIR"
+out=$(STATUSLINE_DOWNLOAD_BASE="file://$release" "$BASH" "$standalone/install.sh" 2>&1)
+equals "$?" "1"
+contains "$out" "контрольная сумма"
+if [ -e "$CLAUDE_CONFIG_DIR" ]; then fail "при неверной сумме что-то записано"; else ok; fi
+out=$(STATUSLINE_RELEASE=main "$BASH" "$standalone/install.sh" 2>&1)
+equals "$?" "1"
+
 # ----------------------------------------------------------------------------
 
 printf '%d passed, %d failed\n' "$passed" "$failed"

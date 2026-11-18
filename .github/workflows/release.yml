@@ -56,3 +56,11 @@ jobs:
           else
             gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
           fi
+      # install.sh, запущенный без копии репозитория, скачивает statusline.sh
+      # отсюда и сверяет его с SHA256SUMS.
+      - name: Attach the scripts and their checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha256sum statusline.sh install.sh > SHA256SUMS
+          gh release upload "$TAG" statusline.sh install.sh SHA256SUMS --clobber

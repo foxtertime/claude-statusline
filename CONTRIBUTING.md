@@ -103,7 +103,7 @@ gh pr merge --merge --delete-branch
 
 Тег пушится отдельной командой, когда `main` уже на GitHub. При выпуске 1.1.0 ветки и тег ушли одним `git push` — тем же, что впервые добавил workflow-файлы, — и `Release` не запустился ([#1](https://github.com/foxtertime/claude-statusline/issues/1)); точная причина не установлена.
 
-После пуша тега workflow `Release` проверяет, что тег совпадает с `VERSION`, и публикует релиз на GitHub с текстом из `CHANGELOG.md`. Если он не запустился, его можно запустить вручную для уже существующего тега:
+После пуша тега workflow `Release` проверяет, что тег совпадает с `VERSION`, публикует релиз на GitHub с текстом из `CHANGELOG.md` и прикладывает к нему `statusline.sh`, `install.sh` и `SHA256SUMS` — с них работает установка без клонирования. Если он не запустился, его можно запустить вручную для уже существующего тега:
 
 ```bash
 gh workflow run release.yml -f tag=vX.Y.Z

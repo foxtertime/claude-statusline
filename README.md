@@ -31,6 +31,18 @@ Weekly  ━━━━━━━━──────────── 41%  4 се
 
 ## Установка
 
+Без клонирования — скачать установщик из последнего релиза, посмотреть и запустить:
+
+```bash
+curl -fsSLO https://github.com/foxtertime/claude-statusline/releases/latest/download/install.sh
+less install.sh
+bash install.sh
+```
+
+Установщик скачает `statusline.sh` из того же релиза и сверит его с `SHA256SUMS`; при несовпадении ничего не устанавливается. Конкретную версию можно выбрать так: `STATUSLINE_RELEASE=v1.3.0 bash install.sh`. Так можно ставить начиная с версии 1.3.0 — в более ранних релизах нет нужных файлов.
+
+Из копии репозитория:
+
 ```bash
 git clone https://github.com/foxtertime/claude-statusline.git
 cd claude-statusline && ./install.sh
@@ -44,13 +56,26 @@ cd claude-statusline && ./install.sh
 
 Остальные настройки не затрагиваются, включая соседние поля `statusLine` (`padding`, `refreshInterval`); прежний файл сохраняется в `settings.json.bak`. Если задана переменная `CLAUDE_CONFIG_DIR`, установка идёт в неё.
 
-Обновление:
+Обновление: `git pull && ./install.sh` в копии репозитория или повторный запуск скачанного установщика.
+
+Установщик же задаёт [настройки](#настройка), чтобы не править `settings.json` руками:
 
 ```bash
-git pull && ./install.sh
+./install.sh --set STATUSLINE_LANG=ru --set STATUSLINE_HIDE=commit,spend   # опции
+./install.sh --unset STATUSLINE_HIDE                                       # убрать опцию
+./install.sh --refresh 60                                                  # statusLine.refreshInterval; 0 — убрать
+./install.sh --padding 2                                                   # statusLine.padding; 0 — убрать
 ```
 
-Удаление:
+Опции записываются в блок `env` и применяются после перезапуска Claude Code. Повторная установка их сохраняет. `STATUSLINE_PADDING` установщик всегда выставляет сам по `statusLine.padding`.
+
+Проверить установку — версии `jq` и `git`, `settings.json`, путь к скрипту, пробный запуск, опции:
+
+```bash
+./install.sh --check
+```
+
+Удаление — скрипт, ключ `statusLine` и все опции `STATUSLINE_*`:
 
 ```bash
 ./install.sh --uninstall
