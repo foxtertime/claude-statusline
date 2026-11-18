@@ -143,10 +143,13 @@ lacks "$(render '{"context_window":{"used_percentage":50},"rate_limits":{"five_h
 t "лимиты: нет rate_limits — нет строк"
 equals "$(render '{}' | wc -l | tr -d ' ')" "2"
 
+# Время «сейчас» фиксируется один раз, а его запись ЧЧ:ММ считается из той же
+# метки (TZ=UTC), иначе тест падал бы на границе минуты.
 now=$(date +%s)
+now_hhmm=$(printf '%02d:%02d' $((now % 86400 / 3600)) $((now % 3600 / 60)))
 t "лимиты: время сброса сегодня и в другой день"
 out=$(render "{\"rate_limits\":{\"five_hour\":{\"used_percentage\":23.5,\"resets_at\":$now},\"seven_day\":{\"used_percentage\":81.2,\"resets_at\":1741635000}}}")
-equals "$(line 3 "$out")" "Current ━━━━━─────────────── 24%  $(date +%H:%M)"
+equals "$(line 3 "$out")" "Current ━━━━━─────────────── 24%  $now_hhmm"
 equals "$(line 4 "$out")" "Weekly  ━━━━━━━━━━━━━━━━──── 81%  10 мар, 19:30"
 
 t "лимиты: окна независимы, resets_at необязателен"
@@ -171,7 +174,7 @@ equals "$(relative 20)" "Current ━──────────────�
 equals "$(relative -500)" "Current ━─────────────────── 5%  через <1 мин"
 equals "$(STATUSLINE_LANG=en relative 7830)" "Current ━─────────────────── 5%  in 2h 10m"
 equals "$(STATUSLINE_LANG=en relative 20)" "Current ━─────────────────── 5%  in <1m"
-equals "$(line 3 "$(STATUSLINE_RESET=bogus render "$(resets_in 0)")")" "Current ━─────────────────── 5%  $(date +%H:%M)"
+equals "$(line 3 "$(STATUSLINE_RESET=bogus render "{\"rate_limits\":{\"five_hour\":{\"used_percentage\":5,\"resets_at\":$now}}}")")" "Current ━─────────────────── 5%  $now_hhmm"
 
 t "лимиты: seven_day_sonnet больше не выводится"
 lacks "$(render '{"rate_limits":{"seven_day_sonnet":{"used_percentage":8}}}')" "Sonnet"
@@ -269,7 +272,7 @@ equals "$(cost_line '{"total_cost_usd":1.5,"total_duration_ms":60000}' '"rate_li
 cache_line() { line 2 "$(render "{\"model\":{\"display_name\":\"M\"},\"prompt_cache\":$1}")"; }
 
 t "cache: тёплый кэш — доля попаданий и время остывания"
-equals "$(cache_line "{\"caching_observed\":true,\"warm\":true,\"hit_ratio\":0.914,\"expires_at\":$now}")" "M │ Cache 91% · $(date +%H:%M)"
+equals "$(cache_line "{\"caching_observed\":true,\"warm\":true,\"hit_ratio\":0.914,\"expires_at\":$now}")" "M │ Cache 91% · $now_hhmm"
 equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":null,"expires_at":1741635000}')" "M │ Cache 10 мар, 19:30"
 equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":0.5,"expires_at":null}')" "M │ Cache 50%"
 equals "$(cache_line '{"caching_observed":true,"warm":true}')" "M │ Cache warm"
@@ -312,6 +315,30 @@ equals "$(line 1 "$(STATUSLINE_HIDE=commit render "{\"workspace\":{\"current_dir
 contains "$(render "{\"workspace\":{\"current_dir\":\"$REPO\"},\"worktree\":{\"name\":\"my-feature\"}}")" "main [clean] wt:my-feature"
 lacks "$(STATUSLINE_HIDE=worktree render "{\"workspace\":{\"current_dir\":\"$REPO\",\"git_worktree\":\"x\"}}")" "wt:"
 
+# --- ссылки на репозиторий --------------------------------------------------
+
+new_repo linked
+git -C "$REPO" checkout -q -b feature/x
+# with_repo <host> <owner> <name>
+with_repo() { printf '{"workspace":{"current_dir":"%s","repo":{"host":"%s","owner":"%s","name":"%s"}}}' "$REPO" "$1" "$2" "$3"; }
+bel=$'\a'
+osc() { printf '%s]8;;%s%s%s%s]8;;%s' "$esc" "$1" "$bel" "$2" "$esc" "$bel"; }
+
+t "ссылки: ветка ведёт на GitHub, на других хостах — в корень репозитория"
+contains "$(NO_COLOR='' render "$(with_repo github.com o r)")" "$(osc https://github.com/o/r/tree/feature/x feature/x)"
+contains "$(NO_COLOR='' render "$(with_repo gitlab.com group/sub r)")" "$(osc https://gitlab.com/group/sub/r feature/x)"
+
+t "ссылки: видимый текст не меняется"
+equals "$(line 1 "$(STATUSLINE_HIDE=commit render "$(with_repo github.com o r)")")" "$REPO │ feature/x [clean]"
+
+t "ссылки: нет repo, небезопасные значения, выключено"
+lacks "$(NO_COLOR='' render "$(in_dir "$REPO")")" "${esc}]8"
+lacks "$(NO_COLOR='' render "$(with_repo github.com 'o r' r)")" "${esc}]8"
+lacks "$(NO_COLOR='' render "$(with_repo github.com o '')")" "${esc}]8"
+lacks "$(NO_COLOR='' STATUSLINE_HIDE=links render "$(with_repo github.com o r)")" "${esc}]8"
+git -C "$REPO" checkout -q -b 'odd#name'
+contains "$(NO_COLOR='' render "$(with_repo github.com o r)")" "$(osc https://github.com/o/r 'odd#name')"
+
 # --- pull request -----------------------------------------------------------
 
 new_repo pr
@@ -332,7 +359,6 @@ lacks "$(render "$(in_dir "$REPO")")" "#"
 lacks "$(STATUSLINE_HIDE="pr" render "$(with_pr '{"number":12}')")" "#12"
 
 t "pr: ссылка OSC 8, отключается NO_COLOR и STATUSLINE_HIDE=links"
-bel=$'\a'
 pr='{"number":12,"url":"https://github.com/o/r/pull/12"}'
 contains "$(NO_COLOR='' render "$(with_pr "$pr")")" "${esc}]8;;https://github.com/o/r/pull/12${bel}#12${esc}]8;;${bel}"
 lacks "$(render "$(with_pr "$pr")")" "${esc}]8"
