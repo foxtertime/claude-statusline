@@ -1,17 +1,34 @@
 #!/usr/bin/env bash
-# Установка и удаление claude-statusline.
+# Установка, настройка и удаление claude-statusline.
 #
-#   ./install.sh              установить или обновить
-#   ./install.sh --uninstall  удалить скрипт и ключ statusLine
+#   ./install.sh [настройки]      установить или обновить
+#   ./install.sh --check          проверить установку
+#   ./install.sh --uninstall      удалить скрипт и его настройки
+#
+# Настройки (можно повторять и сочетать):
+#   --set STATUSLINE_X=значение   задать опцию статуслайна
+#   --unset STATUSLINE_X          убрать опцию
+#   --refresh N                   перерисовывать каждые N секунд (0 — выключить)
+#   --padding N                   отступ statusLine.padding (0 — убрать)
 #
 # Каталог настроек берётся из CLAUDE_CONFIG_DIR, по умолчанию ~/.claude.
+# Если рядом с установщиком нет statusline.sh, он скачивается из релиза на
+# GitHub (STATUSLINE_RELEASE=vX.Y.Z, по умолчанию последний) и сверяется с
+# SHA256SUMS того же релиза.
 set -euo pipefail
 
+REPO_URL="https://github.com/foxtertime/claude-statusline"
 DEFAULT_DIR="$HOME/.claude"
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$DEFAULT_DIR}"
 SETTINGS="$CLAUDE_DIR/settings.json"
 TARGET="$CLAUDE_DIR/statusline.sh"
 SOURCE="$(cd "$(dirname "$0")" && pwd)/statusline.sh"
+
+# Опции, которые принимает --set. STATUSLINE_PADDING не входит: его
+# установщик выставляет сам по statusLine.padding (см. --padding).
+KNOWN_OPTIONS=" LANG BAR_WIDTH WARN CRIT HIDE RESET GIT_CACHE THEME ASCII LAYOUT
+    COLOR_DIR COLOR_MUTED COLOR_MODEL COLOR_TEXT COLOR_OK COLOR_WARN COLOR_CRIT
+    COLOR_ACCENT "
 
 # В settings.json пишем ~/.claude/..., пока каталог стандартный: такой файл
 # можно переносить между машинами.
@@ -29,7 +46,7 @@ die() {
 }
 
 usage() {
-    sed -n '2,7s/^# \{0,1\}//p' "$0"
+    sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//p;}' "$0"
 }
 
 # update_settings <jq-фильтр> [аргументы jq...]
@@ -49,19 +66,128 @@ require_jq() {
     command -v jq >/dev/null 2>&1 || die "не найден jq — установите его (apt/dnf/brew install jq)"
 }
 
+# --- скачивание -------------------------------------------------------------
+
+# download <url> <файл>
+download() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "$2" "$1"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$2" "$1"
+    else
+        die "для скачивания нужен curl или wget"
+    fi
+}
+
+# sha256 <файл> — контрольная сумма
+sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    else
+        shasum -a 256 "$1" | cut -d' ' -f1
+    fi
+}
+
+# fetch_source — если statusline.sh нет рядом, скачать его из релиза
+fetch_source() {
+    [ -f "$SOURCE" ] && return 0
+
+    local release=${STATUSLINE_RELEASE:-latest} base
+    case $release in
+        latest) base="$REPO_URL/releases/latest/download" ;;
+        v[0-9]*.[0-9]*.[0-9]*) base="$REPO_URL/releases/download/$release" ;;
+        *) die "STATUSLINE_RELEASE: ожидается latest или vX.Y.Z, получено '$release'" ;;
+    esac
+    base=${STATUSLINE_DOWNLOAD_BASE:-$base}
+
+    local dir
+    dir=$(mktemp -d)
+    # shellcheck disable=SC2064  # путь подставляется сейчас, это и нужно
+    trap "rm -rf '$dir'" EXIT
+    echo "Скачиваю statusline.sh ($release)…"
+    download "$base/statusline.sh" "$dir/statusline.sh" || die "не удалось скачать $base/statusline.sh"
+    download "$base/SHA256SUMS" "$dir/SHA256SUMS" || die "не удалось скачать $base/SHA256SUMS"
+
+    local expected actual
+    expected=$(awk '$2 == "statusline.sh" || $2 == "*statusline.sh" { print $1 }' "$dir/SHA256SUMS")
+    actual=$(sha256 "$dir/statusline.sh")
+    [ -n "$expected" ] || die "в SHA256SUMS нет записи для statusline.sh"
+    [ "$expected" = "$actual" ] || die "контрольная сумма statusline.sh не совпадает — файл не установлен"
+    SOURCE="$dir/statusline.sh"
+}
+
+# --- настройки --------------------------------------------------------------
+
+SETS='{}'
+UNSETS='[]'
+REFRESH=""
+PADDING=""
+
+# add_set <KEY=VALUE>
+add_set() {
+    local key=${1%%=*} value=${1#*=}
+    [ "$key" != "$1" ] || die "--set: ожидается STATUSLINE_X=значение, получено '$1'"
+    [ "$key" = STATUSLINE_PADDING ] &&
+        die "STATUSLINE_PADDING выставляется сам по statusLine.padding — используйте --padding"
+    case $KNOWN_OPTIONS in
+        *" ${key#STATUSLINE_} "*) ;;
+        *) die "неизвестная опция '$key'; список — в README" ;;
+    esac
+    case $key in STATUSLINE_*) ;; *) die "неизвестная опция '$key'; список — в README" ;; esac
+    SETS=$(jq -n --argjson o "$SETS" --arg k "$key" --arg v "$value" '$o + {($k): $v}')
+}
+
+# add_unset <KEY>
+add_unset() {
+    case $1 in
+        STATUSLINE_*) ;;
+        *) die "--unset: ожидается имя STATUSLINE_X, получено '$1'" ;;
+    esac
+    UNSETS=$(jq -n --argjson a "$UNSETS" --arg k "$1" '$a + [$k]')
+}
+
+# number_arg <флаг> <значение> — неотрицательное целое
+number_arg() {
+    case $2 in
+        '' | *[!0-9]*) die "$1: ожидается неотрицательное целое, получено '$2'" ;;
+    esac
+}
+
+# Переносит настройки в settings.json. STATUSLINE_PADDING всегда следует за
+# statusLine.padding: Claude Code не передаёт отступ скрипту, а без него
+# строки с отступом не помещаются.
+# shellcheck disable=SC2016  # $cmd, $sets и т. д. — переменные jq
+SETTINGS_FILTER='
+    .statusLine = ((.statusLine // {}) + {type: "command", command: $cmd})
+    | if $refresh == "" then .
+      elif $refresh == "0" then del(.statusLine.refreshInterval)
+      else .statusLine.refreshInterval = ($refresh | tonumber) end
+    | if $padding == "" then .
+      elif $padding == "0" then del(.statusLine.padding)
+      else .statusLine.padding = ($padding | tonumber) end
+    | .env = ((.env // {}) + $sets)
+    | reduce $unsets[] as $k (.; del(.env[$k]))
+    | (.statusLine.padding // 0) as $p
+    | if ($p | type) == "number" and $p > 0
+      then .env.STATUSLINE_PADDING = ($p | tostring)
+      else del(.env.STATUSLINE_PADDING) end
+    | if .env == {} then del(.env) else . end
+'
+
+# --- действия ---------------------------------------------------------------
+
 do_install() {
     require_jq
-    [ -f "$SOURCE" ] || die "не найден $SOURCE"
+    fetch_source
 
     mkdir -p "$CLAUDE_DIR"
+    local args=(--arg cmd "$COMMAND" --arg refresh "$REFRESH" --arg padding "$PADDING"
+        --argjson sets "$SETS" --argjson unsets "$UNSETS")
     if [ -f "$SETTINGS" ]; then
-        # Сохраняем остальные поля statusLine (padding, refreshInterval).
-        # shellcheck disable=SC2016  # $cmd — переменная jq
-        update_settings --arg cmd "$COMMAND" \
-            '.statusLine = ((.statusLine // {}) + {type: "command", command: $cmd})'
+        update_settings "${args[@]}" "$SETTINGS_FILTER"
         echo "Обновлён $SETTINGS (бэкап: $SETTINGS.bak)"
     else
-        jq -n --arg cmd "$COMMAND" '{statusLine: {type: "command", command: $cmd}}' >"$SETTINGS"
+        jq -n "${args[@]}" "{} | $SETTINGS_FILTER" >"$SETTINGS"
         echo "Создан $SETTINGS"
     fi
 
@@ -72,6 +198,9 @@ do_install() {
         echo "Предупреждение: git не найден — git-блок показываться не будет." >&2
 
     echo "Установлено: $("$TARGET" --version)"
+    if [ "$SETS$UNSETS" != '{}[]' ] || [ -n "$PADDING" ]; then
+        echo "Настройки из блока env применяются после перезапуска Claude Code."
+    fi
     echo "Готово. Если статуслайн не появился — перезапустите Claude Code."
 }
 
@@ -79,19 +208,200 @@ do_uninstall() {
     require_jq
     # Сначала настройки: статуслайн не должен ссылаться на удалённый файл.
     if [ -f "$SETTINGS" ]; then
-        update_settings 'del(.statusLine)'
-        echo "Ключ statusLine удалён из $SETTINGS (бэкап: $SETTINGS.bak)"
+        update_settings '
+            del(.statusLine)
+            | if .env then .env |= with_entries(select(.key | startswith("STATUSLINE_") | not)) else . end
+            | if .env == {} then del(.env) else . end'
+        echo "Ключ statusLine и опции STATUSLINE_* удалены из $SETTINGS (бэкап: $SETTINGS.bak)"
     fi
     rm -f "$TARGET"
     echo "claude-statusline удалён."
 }
 
-case ${1:-} in
-    "") do_install ;;
-    --uninstall) do_uninstall ;;
-    -h | --help) usage ;;
-    *)
-        usage >&2
-        exit 2
-        ;;
+# --- проверка ---------------------------------------------------------------
+
+PROBLEMS=0
+
+report() {
+    local mark=$1
+    shift
+    case $mark in
+        ok) printf '  [ок]       %s\n' "$*" ;;
+        warn) printf '  [внимание] %s\n' "$*" ;;
+        fail)
+            printf '  [ошибка]   %s\n' "$*"
+            PROBLEMS=$((PROBLEMS + 1))
+            ;;
+    esac
+}
+
+# version_of <строка> — первое число вида X.Y из строки
+version_of() {
+    printf '%s\n' "$1" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1
+}
+
+# version_lt <a> <b> — a < b (сравнение X.Y)
+version_lt() {
+    local a_major=${1%%.*} b_major=${2%%.*} a_rest=${1#*.} b_rest=${2#*.}
+    local a_minor=${a_rest%%.*} b_minor=${b_rest%%.*}
+    [ "$a_major" -lt "$b_major" ] || { [ "$a_major" -eq "$b_major" ] && [ "$a_minor" -lt "$b_minor" ]; }
+}
+
+do_check() {
+    echo "Проверка claude-statusline"
+
+    report ok "bash $BASH_VERSION"
+
+    if command -v jq >/dev/null 2>&1; then
+        report ok "$(jq --version)"
+    else
+        report fail "jq не найден — без него статуслайн не работает"
+    fi
+
+    if command -v git >/dev/null 2>&1; then
+        local git_version
+        git_version=$(version_of "$(git --version)")
+        if version_lt "$git_version" 2.15; then
+            report warn "git $git_version: нужен 2.15+, иначе git-блок не показывается"
+        elif version_lt "$git_version" 2.35; then
+            report warn "git $git_version: счётчик stash появится с git 2.35"
+        else
+            report ok "git $git_version"
+        fi
+    else
+        report warn "git не найден — git-блок показываться не будет"
+    fi
+
+    if [ ! -f "$SETTINGS" ]; then
+        report fail "$SETTINGS не найден — запустите ./install.sh"
+    elif ! command -v jq >/dev/null 2>&1; then
+        :
+    elif ! jq empty "$SETTINGS" 2>/dev/null; then
+        report fail "$SETTINGS — не валидный JSON"
+    else
+        check_settings
+    fi
+
+    if [ "$PROBLEMS" -eq 0 ]; then
+        echo "Проблем не найдено."
+    else
+        echo "Найдено проблем: $PROBLEMS."
+        return 1
+    fi
+}
+
+check_settings() {
+    local type command
+    type=$(jq -r '.statusLine.type // ""' "$SETTINGS")
+    command=$(jq -r '.statusLine.command // ""' "$SETTINGS")
+    if [ -z "$command" ]; then
+        report fail "в $SETTINGS нет statusLine.command — запустите ./install.sh"
+        return
+    fi
+    [ "$type" = command ] || report fail "statusLine.type = '$type', ожидается 'command'"
+    report ok "statusLine.command: $command"
+
+    local script=$TARGET
+    if [ "$command" != "$COMMAND" ]; then
+        report warn "команда отличается от той, что ставит установщик ($COMMAND)"
+        # Чужая команда: берём последнее слово и раскрываем ~ сами.
+        script=${command##* }
+        case $script in
+            \~/*) script="$HOME/${script#\~/}" ;;
+        esac
+    fi
+    if [ ! -x "$script" ]; then
+        report fail "$script не найден или не исполняемый"
+        return
+    fi
+
+    local installed
+    installed=$("$script" --version 2>/dev/null | cut -d' ' -f2)
+    if [ -f "$SOURCE" ]; then
+        local available
+        available=$("$BASH" "$SOURCE" --version 2>/dev/null | cut -d' ' -f2)
+        if [ "$installed" = "$available" ]; then
+            report ok "установлена версия $installed"
+        else
+            report warn "установлена версия $installed, в этой копии репозитория — $available; обновить: ./install.sh"
+        fi
+    else
+        report ok "установлена версия $installed"
+    fi
+
+    local lines
+    if lines=$(printf '{}' | "$script" 2>&1) && [ -n "$lines" ]; then
+        report ok "пробный запуск: скрипт выводит строки и завершается без ошибок"
+    else
+        report fail "пробный запуск завершился ошибкой: $lines"
+    fi
+
+    local key value
+    while IFS=$'\t' read -r key value; do
+        [ -n "$key" ] || continue
+        case $KNOWN_OPTIONS in
+            *" ${key#STATUSLINE_} "*) report ok "опция $key=$value" ;;
+            *) [ "$key" = STATUSLINE_PADDING ] || report warn "неизвестная опция $key — статуслайн её не читает" ;;
+        esac
+    done < <(jq -r '(.env // {}) | to_entries[] | select(.key | startswith("STATUSLINE_")) | "\(.key)\t\(.value)"' "$SETTINGS")
+
+    local padding env_padding
+    padding=$(jq -r '.statusLine.padding // 0' "$SETTINGS")
+    env_padding=$(jq -r '.env.STATUSLINE_PADDING // "0"' "$SETTINGS")
+    if [ "$padding" != "$env_padding" ]; then
+        report warn "statusLine.padding = $padding, а STATUSLINE_PADDING = $env_padding — строки могут обрезаться; исправит ./install.sh"
+    fi
+}
+
+# --- разбор аргументов ------------------------------------------------------
+
+ACTION=install
+while [ $# -gt 0 ]; do
+    case $1 in
+        --uninstall) ACTION=uninstall ;;
+        --check) ACTION=check ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        --set)
+            [ $# -ge 2 ] || die "--set: нужно значение"
+            require_jq
+            add_set "$2"
+            shift
+            ;;
+        --unset)
+            [ $# -ge 2 ] || die "--unset: нужно имя опции"
+            require_jq
+            add_unset "$2"
+            shift
+            ;;
+        --refresh)
+            [ $# -ge 2 ] || die "--refresh: нужно число секунд"
+            number_arg --refresh "$2"
+            REFRESH=$2
+            shift
+            ;;
+        --padding)
+            [ $# -ge 2 ] || die "--padding: нужно число"
+            number_arg --padding "$2"
+            PADDING=$2
+            shift
+            ;;
+        *)
+            usage >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+if [ "$ACTION" != install ] && { [ "$SETS$UNSETS" != '{}[]' ] || [ -n "$REFRESH$PADDING" ]; }; then
+    die "настройки задаются только при установке, без --check и --uninstall"
+fi
+
+case $ACTION in
+    install) do_install ;;
+    uninstall) do_uninstall ;;
+    check) do_check ;;
 esac

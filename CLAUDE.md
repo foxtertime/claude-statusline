@@ -27,8 +27,12 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 
 - `statusline.sh` — the product. `read_input` (one jq call) → `read_git` (one
   `git status --porcelain=v2`) → `render_*` → `main`. Holds `VERSION`.
-- `install.sh` — copies the script into the Claude config dir and merges the
-  `statusLine` key into `settings.json`; `--uninstall` reverses it.
+- `install.sh` — copies the script into the Claude config dir (downloading
+  it from the release and checking `SHA256SUMS` when run without a repo
+  copy), merges `statusLine` and `STATUSLINE_*` options from `--set` into
+  `settings.json`, keeps `STATUSLINE_PADDING` in sync with
+  `statusLine.padding`; `--check` diagnoses, `--uninstall` reverses all of it.
+  A new `STATUSLINE_*` option must be added to `KNOWN_OPTIONS` there.
 - `tests/run.sh` — black-box tests for both scripts.
 - `.githooks/commit-msg`, `.github/workflows/` — commit lint, CI, release.
 

@@ -6,6 +6,7 @@
 
 
 ### Добавлено
+- Установщик: установка без клонирования из релиза с проверкой `SHA256SUMS`; `--set`, `--unset`, `--refresh` и `--padding` для настроек; `--check` для диагностики. `STATUSLINE_PADDING` выставляется автоматически по `statusLine.padding`; `--uninstall` убирает и опции ([#23](https://github.com/foxtertime/claude-statusline/issues/23)).
 - `STATUSLINE_LAYOUT`: порядок сегментов строки 2, перенос части сегментов на отдельную строку через `/` и однострочный режим `compact` ([#20](https://github.com/foxtertime/claude-statusline/issues/20)).
 - `STATUSLINE_PADDING` — передаёт скрипту `statusLine.padding`, чтобы строки с отступом не обрезались ([#21](https://github.com/foxtertime/claude-statusline/issues/21)).
 - Темы и цвета: `STATUSLINE_THEME=light` для светлого фона и `STATUSLINE_COLOR_<РОЛЬ>` для отдельных ролей; `STATUSLINE_ASCII=1` — режим без псевдографики ([#26](https://github.com/foxtertime/claude-statusline/issues/26)).
