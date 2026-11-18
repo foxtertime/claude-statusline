@@ -228,6 +228,26 @@ equals "$(line 2 "$(COLUMNS=64 render "$full")")" "M (200K) (high) │ Ctx ━�
 equals "$(line 2 "$(COLUMNS=63 render "$full")")" "M (200K) (high)"
 contains "$(line 2 "$(COLUMNS=64 NO_COLOR='' render "$full")")" "100K / 200K"
 
+# --- стоимость сессии -------------------------------------------------------
+
+# cost_line <json-объект cost> [остальные поля]
+cost_line() { line 2 "$(render "{\"model\":{\"display_name\":\"M\"},\"cost\":$1${2:+,$2}}")"; }
+
+t "cost: стоимость, длительность, строки"
+equals "$(cost_line '{"total_cost_usd":1.2351,"total_duration_ms":2280000,"total_lines_added":156,"total_lines_removed":23}')" "M │ \$1.24 · 38 мин · +156 −23"
+equals "$(STATUSLINE_LANG=en cost_line '{"total_cost_usd":12,"total_duration_ms":3900000}')" "M │ \$12.00 · 1h 5m"
+equals "$(cost_line '{"total_cost_usd":0.05,"total_duration_ms":45000}')" "M │ \$0.05 · 45 с"
+equals "$(STATUSLINE_LANG=en cost_line '{"total_duration_ms":273600000}')" "M │ 3d 4h"
+equals "$(cost_line '{"total_lines_added":0,"total_lines_removed":4}')" "M │ +0 −4"
+
+t "cost: нет данных или нули — нет сегмента"
+equals "$(cost_line '{}')" "M"
+equals "$(cost_line '{"total_cost_usd":0,"total_duration_ms":0,"total_lines_added":0,"total_lines_removed":0}')" "M"
+equals "$(STATUSLINE_HIDE=cost cost_line '{"total_cost_usd":1}')" "M"
+
+t "cost: по подписке сумма в долларах не показывается"
+equals "$(cost_line '{"total_cost_usd":1.5,"total_duration_ms":60000}' '"rate_limits":{"five_hour":{"used_percentage":1}}')" "M │ 1 мин"
+
 # --- pull request -----------------------------------------------------------
 
 new_repo pr

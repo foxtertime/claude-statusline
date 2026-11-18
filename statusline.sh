@@ -64,7 +64,8 @@ if is_int "${COLUMNS:-}" && [ "$COLUMNS" -ge 20 ]; then
     MAX_WIDTH=$((COLUMNS - WIDTH_MARGIN))
 fi
 
-# Segments: git commit pr links effort context tokens limits current weekly spend
+# Segments: git commit pr links effort context tokens cost
+#           limits current weekly spend
 HIDE=",${STATUSLINE_HIDE:-},"
 HIDE=${HIDE// /,}
 
@@ -192,6 +193,37 @@ fmt_tokens() {
     fi
 }
 
+# fmt_duration <seconds> — "45s", "38m", "1h 5m", "3d 4h" (ru: "38 мин", "1 ч 5 мин")
+fmt_duration() {
+    local s=$1 d h m
+    d=$((s / 86400)) h=$((s % 86400 / 3600)) m=$((s % 3600 / 60))
+    if [ "$LANG_CODE" = ru ]; then
+        if [ "$d" -gt 0 ]; then
+            REPLY="$d д"
+            [ "$h" -gt 0 ] && REPLY="$REPLY $h ч"
+        elif [ "$h" -gt 0 ]; then
+            REPLY="$h ч"
+            [ "$m" -gt 0 ] && REPLY="$REPLY $m мин"
+        elif [ "$m" -gt 0 ]; then
+            REPLY="$m мин"
+        else
+            REPLY="$s с"
+        fi
+    else
+        if [ "$d" -gt 0 ]; then
+            REPLY="${d}d"
+            [ "$h" -gt 0 ] && REPLY="$REPLY ${h}h"
+        elif [ "$h" -gt 0 ]; then
+            REPLY="${h}h"
+            [ "$m" -gt 0 ] && REPLY="$REPLY ${m}m"
+        elif [ "$m" -gt 0 ]; then
+            REPLY="${m}m"
+        else
+            REPLY="${s}s"
+        fi
+    fi
+}
+
 # fmt_reset <epoch> — "19:30" if today, otherwise "10 мар, 19:30" / "Mar 10, 19:30"
 fmt_reset() {
     local ts=$1 fmt='+%Y%m%d %d %m %H:%M' out ymd day mon hhmm
@@ -218,11 +250,17 @@ read_input() {
     five_pct="" five_reset="" week_pct="" week_reset=""
     spend_pct="" spend_reset="" spend_usd=""
     pr_number="" pr_url="" pr_state="" pr_kind=""
+    cost_usd="" cost_secs="" lines_added="" lines_removed=""
 
     local assignments
     assignments=$(jq -r '
         def int: if type == "number" then round else "" end;
         def str: if type == "string" then . else "" end;
+        def money:
+            if type == "number" and . > 0
+            then (. * 100 | round) as $cents
+                | "\($cents / 100 | floor).\($cents % 100 + 100 | tostring | .[1:])"
+            else "" end;
         (.context_window // {}) as $ctx
         | (.rate_limits // {}) as $rl
         | ($rl.spend_limit // {}) as $spend
@@ -245,7 +283,11 @@ read_input() {
           @sh "pr_number=\(.pr.number | int)",
           @sh "pr_url=\(.pr.url | str)",
           @sh "pr_state=\(.pr.review_state | str)",
-          @sh "pr_kind=\(.pr.kind | str)"
+          @sh "pr_kind=\(.pr.kind | str)",
+          @sh "cost_usd=\(.cost.total_cost_usd | money)",
+          @sh "cost_secs=\(.cost.total_duration_ms | if type == "number" then . / 1000 | floor else "" end)",
+          @sh "lines_added=\(.cost.total_lines_added | int)",
+          @sh "lines_removed=\(.cost.total_lines_removed | int)"
     ' 2>/dev/null) || return 0
     # Safe: every value is quoted by jq's @sh.
     eval "$assignments"
@@ -431,6 +473,29 @@ render_model() {
         fi
         SEGMENTS+=("${out}${C_RESET}")
     fi
+
+    if shown cost; then
+        render_cost
+        [ -n "$REPLY" ] && SEGMENTS+=("$REPLY")
+    fi
+}
+
+# render_cost — "$1.24 · 38m · +156 −23"; empty when there is nothing to show
+render_cost() {
+    local out="" dot="${C_DIM} · ${C_RESET}"
+    # The dollar figure is a list-price estimate; it means nothing on a
+    # subscription, which is recognised by its rate-limit windows.
+    if [ -n "$cost_usd" ] && [ -z "${five_pct}${week_pct}" ]; then
+        out="${C_TEXT}\$${cost_usd}${C_RESET}"
+    fi
+    if [ "${cost_secs:-0}" -gt 0 ]; then
+        fmt_duration "$cost_secs"
+        out="${out:+${out}${dot}}${C_DIM}${REPLY}${C_RESET}"
+    fi
+    if [ $((${lines_added:-0} + ${lines_removed:-0})) -gt 0 ]; then
+        out="${out:+${out}${dot}}${C_GREEN}+${lines_added:-0}${C_RESET} ${C_RED}−${lines_removed:-0}${C_RESET}"
+    fi
+    REPLY=$out
 }
 
 # render_limit <label> <percent> <reset epoch> [note]
