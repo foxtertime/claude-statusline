@@ -262,6 +262,26 @@ equals "$(STATUSLINE_HIDE=cost cost_line '{"total_cost_usd":1}')" "M"
 t "cost: по подписке сумма в долларах не показывается"
 equals "$(cost_line '{"total_cost_usd":1.5,"total_duration_ms":60000}' '"rate_limits":{"five_hour":{"used_percentage":1}}')" "M │ 1 мин"
 
+# --- prompt cache -----------------------------------------------------------
+
+# cache_line <json-объект prompt_cache>
+cache_line() { line 2 "$(render "{\"model\":{\"display_name\":\"M\"},\"prompt_cache\":$1}")"; }
+
+t "cache: тёплый кэш — доля попаданий и время остывания"
+equals "$(cache_line "{\"caching_observed\":true,\"warm\":true,\"hit_ratio\":0.914,\"expires_at\":$now}")" "M │ Cache 91% · $(date +%H:%M)"
+equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":null,"expires_at":1741635000}')" "M │ Cache 10 мар, 19:30"
+equals "$(cache_line '{"caching_observed":true,"warm":true,"hit_ratio":0.5,"expires_at":null}')" "M │ Cache 50%"
+equals "$(cache_line '{"caching_observed":true,"warm":true}')" "M │ Cache warm"
+equals "$(STATUSLINE_RESET=relative cache_line "{\"caching_observed\":true,\"warm\":true,\"hit_ratio\":1,\"expires_at\":$((now + 270))}")" "M │ Cache 100% · через 4 мин"
+
+t "cache: остывший кэш"
+equals "$(cache_line '{"caching_observed":true,"warm":false,"hit_ratio":0.9,"expires_at":null}')" "M │ Cache cold"
+
+t "cache: нет данных, кэширование не наблюдалось, сегмент скрыт"
+equals "$(render '{"model":{"display_name":"M"}}' | sed -n 2p)" "M"
+equals "$(cache_line '{"caching_observed":false,"warm":false}')" "M"
+equals "$(STATUSLINE_HIDE=cache cache_line '{"caching_observed":true,"warm":true}')" "M"
+
 # --- pull request -----------------------------------------------------------
 
 new_repo pr
