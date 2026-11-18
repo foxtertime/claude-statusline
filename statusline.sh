@@ -28,7 +28,6 @@
 #   STATUSLINE_PADDING    the statusLine.padding value from settings.json
 
 set -u
-shopt -s extglob # visible_len strips escape sequences with *(...)
 
 VERSION="1.2.0"
 
@@ -212,11 +211,41 @@ repeat() {
 # visible_len <string> — terminal columns, without colors and link targets.
 # East Asian wide characters and emoji take two columns.
 visible_len() {
-    local plain=${1//$ESC\[*([0-9;])m/}
-    plain=${plain//$ESC\]8;;*([!$BEL])$BEL/}
+    strip_escapes "$1"
+    local plain=$REPLY
     local width=${#plain}
     wide_count "$plain"
     REPLY=$((width + REPLY))
+}
+
+# strip_escapes <string> — the text without color codes and link targets.
+# Every color code in a line is one of ours, so they are removed as literal
+# strings: an extglob pattern such as $ESC\[*([0-9;])m backtracks and cost
+# about 25 ms per call on a full line 2.
+strip_escapes() {
+    local s=$1 c pre
+    case $s in
+        *"$ESC"*) ;;
+        *)
+            REPLY=$s
+            return 0
+            ;;
+    esac
+    for c in "$C_RESET" "$C_DIR" "$C_DIM" "$C_MODEL" "$C_TEXT" "$C_GREEN" \
+        "$C_YELLOW" "$C_RED" "$C_GREEN_B" "$C_YELLOW_B" "$C_RED_B" "$C_CYAN_B"; do
+        [ -n "$c" ] && s=${s//"$c"/}
+    done
+    # OSC 8 links: ESC ] 8 ; ; URL BEL text ESC ] 8 ; ; BEL
+    while :; do
+        case $s in
+            *"$ESC]8;;"*) ;;
+            *) break ;;
+        esac
+        pre=${s%%"$ESC]8;;"*}
+        s=${s#*"$ESC]8;;"}
+        s="${pre}${s#*"$BEL"}"
+    done
+    REPLY=$s
 }
 
 # wide_count <string> — how many wide characters it contains.

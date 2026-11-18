@@ -67,7 +67,9 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   `fit_limit`. Add a new line-2 item as a segment in priority order, never by
   appending to an existing one. Widths come from `visible_len`, which counts
   wide characters as two columns. Benchmark with `COLUMNS` set — that is the
-  real path.
+  real path. No extglob or other backtracking patterns on long strings:
+  `${s//$ESC\[*([0-9;])m/}` once cost 25 ms per call (#31); strip known
+  strings literally instead.
 - All color variables must be cleared in the `NO_COLOR` block. Colours come
   from the `R_*` roles (themes and `STATUSLINE_COLOR_*` overrides); a new
   colour is a new role, documented in the README role table.
