@@ -75,10 +75,19 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   commit or PR body with `Closes #<n>` (or `Refs #<n>` if it only partly
   addresses it). Follow-up work you notice but don't do goes into a new issue,
   not a TODO comment.
-- **Gitflow.** Branch `feature/<name>` from `develop`, merge back with
-  `--no-ff`. Never commit directly to `main` or `develop`. Releases go through
-  `release/X.Y.Z`, hotfixes through `hotfix/X.Y.Z` from `main`. The exact
-  release commands are in CONTRIBUTING.md.
+- **Every branch is merged through a pull request.** No local merges into
+  `develop` or `main`, and no direct pushes to them — this covers feature,
+  release and hotfix branches alike. The flow is: issue → branch → push →
+  `gh pr create --base develop` → wait for CI (`gh pr checks --watch`) →
+  `gh pr merge --merge --delete-branch`. Always a merge commit, never squash
+  or rebase: Gitflow history keeps the branch visible. One PR per issue; fill
+  in the PR template. `Closes #<n>` only auto-closes on merges into `main`,
+  so after a PR lands in `develop`, close the issue yourself with a comment
+  pointing at the PR.
+- **Gitflow.** Branch `feature/<n>-<name>` from `develop`. Releases go
+  through `release/X.Y.Z`, hotfixes through `hotfix/X.Y.Z` from `main`; each
+  of those needs two PRs, one into `main` and one into `develop`. The exact
+  release steps are in CONTRIBUTING.md.
 - **Conventional Commits**, enforced by the hook and CI:
   `type(scope): description` — types `feat fix docs refactor perf test build ci
   chore revert`, scopes `statusline install release`, subject ≤ 72 chars, no
@@ -86,11 +95,13 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 - **SemVer.** `VERSION` in `statusline.sh` is the single source of truth and a
   test checks it against the newest `CHANGELOG.md` section. Only bump it on a
   release branch.
-- **Wait for CI before closing an issue.** The macOS job runs the system
-  bash 3.2, which cannot be reproduced on Linux; push the feature branch as a
-  PR to `develop` and merge only when it is green. In tests, build JSON with
+- **Merge only when CI is green.** The macOS job runs the system bash 3.2,
+  which cannot be reproduced on Linux, so local checks are not enough. In
+  tests, build JSON with
   `printf` and a single-quoted format — `\"` inside `"$(...)"` is parsed
   differently by bash 3.2.
 - A behavior change needs a test in `tests/run.sh` and a line under
   `[Unreleased]` in `CHANGELOG.md` (Russian, Keep a Changelog format).
-- Do not push, tag, or publish a release without being asked.
+- Pushing feature branches, opening and merging their PRs and closing their
+  issues is part of doing the work. Do not tag or publish a release without
+  being asked.
