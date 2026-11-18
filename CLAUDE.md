@@ -63,7 +63,13 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   `render_location`; line 2 is the `SEGMENTS` array, most important first,
   and `join_fit` drops from the end. Add a new line-2 item as a segment in
   priority order, never by appending to an existing one.
-- All color variables must be cleared in the `NO_COLOR` block.
+- All color variables must be cleared in the `NO_COLOR` block. Colours come
+  from the `R_*` roles (themes and `STATUSLINE_COLOR_*` overrides); a new
+  colour is a new role, documented in the README role table.
+- **No literal labels or glyphs in render code.** Every word goes into the
+  labels block in both languages (`L_*`), every non-ASCII symbol into the
+  glyphs block with an ASCII twin (`G_*`). The tests pin `STATUSLINE_LANG=en`;
+  Russian output is checked in its own section.
 - **Options are `STATUSLINE_*` environment variables**, validated in the
   configuration block; an invalid value silently keeps the default. A new
   segment gets a name for `STATUSLINE_HIDE` (checked with `shown <name>`) and
