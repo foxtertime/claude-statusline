@@ -6,10 +6,12 @@
 
 
 ### Добавлено
+- `STATUSLINE_PADDING` — передаёт скрипту `statusLine.padding`, чтобы строки с отступом не обрезались ([#21](https://github.com/foxtertime/claude-statusline/issues/21)).
 - Темы и цвета: `STATUSLINE_THEME=light` для светлого фона и `STATUSLINE_COLOR_<РОЛЬ>` для отдельных ролей; `STATUSLINE_ASCII=1` — режим без псевдографики ([#26](https://github.com/foxtertime/claude-statusline/issues/26)).
 - Флаг `--demo`: статуслайн на встроенном примере данных со всеми сегментами — чтобы увидеть действие настроек сразу ([#24](https://github.com/foxtertime/claude-statusline/issues/24)).
 
 ### Изменено
+- Подгонка под ширину: запас подтверждён замером (Claude Code показывает `COLUMNS − 4 − 2 × padding` колонок); иероглифы и эмодзи считаются за две колонки; строки лимитов теперь тоже ужимаются; строка 1 и сегмент модели получили дополнительные ступени сокращения ([#21](https://github.com/foxtertime/claude-statusline/issues/21)).
 - В русском режиме переведены все подписи: `Контекст`, `Кэш`, `Сейчас`, `Неделя`, `Расход`, `[чисто]`, состояния ревью и другие ([#26](https://github.com/foxtertime/claude-statusline/issues/26)).
 - Время сброса лимитов и остывания кэша форматируется без запуска `date` на bash 4.2+: отрисовка с тремя строками лимитов и кэшем ускорилась примерно с 39 до 10 мс. На bash 3.2 (macOS) по-прежнему используется `date` ([#25](https://github.com/foxtertime/claude-statusline/issues/25)).
 

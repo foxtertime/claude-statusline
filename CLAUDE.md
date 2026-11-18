@@ -59,10 +59,15 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   version check with a 3.2 fallback, like `printf '%(…)T'` in `format_time`;
   keep a test that forces the fallback (`_STATUSLINE_FORCE_DATE=1`), because
   the macOS job is the only place the 3.2 path runs naturally.
-- **Lines must fit `COLUMNS`.** Line 1 degrades through the levels in
-  `render_location`; line 2 is the `SEGMENTS` array, most important first,
-  and `join_fit` drops from the end. Add a new line-2 item as a segment in
-  priority order, never by appending to an existing one.
+- **Lines must fit `COLUMNS − 4 − 2 × padding`**, the width Claude Code
+  actually shows (measured; longer lines are cut with an ellipsis). Line 1
+  degrades through the levels in `render_location`; line 2 is the `SEGMENTS`
+  array, most important first, and `join_fit` drops from the end, then
+  shortens the model segment through `HEAD_FORMS`; limit rows go through
+  `fit_limit`. Add a new line-2 item as a segment in priority order, never by
+  appending to an existing one. Widths come from `visible_len`, which counts
+  wide characters as two columns. Benchmark with `COLUMNS` set — that is the
+  real path.
 - All color variables must be cleared in the `NO_COLOR` block. Colours come
   from the `R_*` roles (themes and `STATUSLINE_COLOR_*` overrides); a new
   colour is a new role, documented in the README role table.

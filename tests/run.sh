@@ -456,6 +456,54 @@ plain=$(line 1 "$(STATUSLINE_HIDE=commit render "$(with_pr "$pr")")")
 linked=$(line 1 "$(STATUSLINE_HIDE=commit NO_COLOR='' COLUMNS=$((${#plain} + 4)) render "$(with_pr "$pr")")")
 contains "$linked" "$REPO"
 
+# width <строка> — ширина в колонках терминала (широкие символы — две)
+cols() { python3 -I -c 'import sys,unicodedata as u; s=sys.argv[1]; print(sum(2 if u.east_asian_width(c) in "WF" else 1 for c in s))' "$1"; }
+
+t "ширина: STATUSLINE_PADDING уменьшает доступную ширину на 2 × padding"
+equals "$(width 30)" "…/app │ feature/v… [clean]"
+equals "$(line 1 "$(COLUMNS=36 STATUSLINE_PADDING=3 render "$app")")" "…/app │ feature/v… [clean]"
+equals "$(line 1 "$(COLUMNS=30 STATUSLINE_PADDING=abc render "$app")")" "…/app │ feature/v… [clean]"
+
+t "ширина: широкие символы занимают две колонки"
+mkdir -p "$TMP/data/项目"
+equals "$(line 1 "$(COLUMNS=22 render "$(in_dir "$TMP/data/项目")")")" "…/项目 │ [no git]"
+# Подгонка включается с COLUMNS ≥ 20, поэтому строки здесь длиннее.
+rockets='{"model":{"display_name":"M"},"session_name":"🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀"}'
+equals "$(line 2 "$(COLUMNS=26 render "$rockets")")" "M"
+equals "$(line 2 "$(COLUMNS=28 render "$rockets")")" "M │ 🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀"
+equals "$(line 2 "$(COLUMNS=26 render '{"model":{"display_name":"M"},"session_name":"абвгдежзийклмнопрс"}')")" "M │ абвгдежзийклмнопрс"
+
+t "ширина: строки лимитов теряют примечание, время сброса, затем укорачивают шкалу"
+spend='{"rate_limits":{"spend_limit":{"used_percentage":86,"resets_at":1741635000,"used_usd":430,"limit_usd":500}}}'
+equals "$(line 3 "$(render "$spend")")" "Spend   ━━━━━━━━━━━━━━━━━─── 86%  Mar 10, 19:30  \$430 / \$500"
+equals "$(line 3 "$(COLUMNS=51 render "$spend")")" "Spend   ━━━━━━━━━━━━━━━━━─── 86%  Mar 10, 19:30"
+equals "$(line 3 "$(COLUMNS=50 render "$spend")")" "Spend   ━━━━━━━━━━━━━━━━━─── 86%"
+equals "$(line 3 "$(COLUMNS=40 render "$spend")")" "Spend   ━━━━━━━━━━━━━━━━━─── 86%"
+equals "$(line 3 "$(COLUMNS=30 render "$spend")")" "Spend   ━━━━━━━━━━━━── 86%"
+equals "$(line 3 "$(COLUMNS=20 render "$spend")")" "Spend   ━━━━─ 86%"
+
+t "ширина: ни одна строка демо не шире доступной"
+# Ниже ~40 колонок самый короткий вариант строки может не влезть — тогда её
+# обрежет сам Claude Code.
+for c in 40 50 60 80 120; do
+    for opts in "" "STATUSLINE_LANG=ru" "STATUSLINE_ASCII=1" "STATUSLINE_PADDING=2"; do
+        max=$((c - 4))
+        case $opts in STATUSLINE_PADDING=2) max=$((c - 8)) ;; esac
+        while IFS= read -r row; do
+            w=$(cols "$row")
+            if [ "$w" -gt "$max" ]; then fail "COLUMNS=$c $opts: $w > $max" "$row"; else ok; fi
+        done <<<"$(env $opts COLUMNS=$c "$BASH" "$SCRIPT" --demo)"
+    done
+done
+
+t "ширина: сегмент модели теряет агента, fast и effort последними"
+head='{"model":{"display_name":"Opus"},"effort":{"level":"high"},"fast_mode":true,"agent":{"name":"rev"},"context_window":{"used_percentage":5}}'
+equals "$(line 2 "$(COLUMNS=30 render "$head")")" "Opus (high) fast @rev"
+equals "$(line 2 "$(COLUMNS=24 render "$head")")" "Opus (high) fast"
+equals "$(line 2 "$(COLUMNS=20 STATUSLINE_PADDING=1 render "$head")")" "Opus (high)"
+equals "$(line 2 "$(COLUMNS=20 STATUSLINE_PADDING=3 render "$head")")" "Opus"
+equals "$(line 2 "$(render "$head")")" "Opus (high) fast @rev │ Ctx ━─────────────────── 5%"
+
 t "git: каталог вне репозитория"
 mkdir -p "$TMP/plain"
 contains "$(render "$(in_dir "$TMP/plain")")" "[no git]"
