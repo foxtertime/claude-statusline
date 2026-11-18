@@ -2,10 +2,14 @@
 # claude-statusline — status line for Claude Code.
 #
 # Reads the session JSON from stdin and prints:
-#   1. directory │ git branch, working tree state, last commit
-#   2. model (context size) (effort) │ context usage bar
+#   1. directory │ git branch, working tree state, worktree, pull request
+#      │ last commit
+#   2. model (context size) (effort) fast @agent │ context usage bar
+#      │ session cost, duration, lines │ prompt cache │ vim mode │ session name
 #   3+ one row per usage limit reported by Claude Code: 5-hour, 7-day,
 #      gateway spend limit
+# Everything but the directory and the model appears only when Claude Code
+# sends the data. Lines 1 and 2 shrink to fit COLUMNS.
 #
 # Input schema: https://code.claude.com/docs/en/statusline#available-data
 # Requires: bash 3.2+, jq. Optional: git.
@@ -247,7 +251,6 @@ fmt_duration() {
 
 # fmt_remaining <epoch> — "через 2 ч 10 мин" / "in 2h 10m"
 fmt_remaining() {
-
     set_now
     local left=$(($1 - NOW))
     if [ "$left" -lt 60 ]; then

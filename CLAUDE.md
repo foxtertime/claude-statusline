@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 Status line for Claude Code: a single bash script that reads the session JSON
-on stdin and prints 2–5 lines (directory + git, model + context bar, usage
-limits). User-facing docs, messages and code comments in `install.sh` and
+on stdin and prints 2–5 lines (directory + git + pull request; model, context
+bar, session cost, prompt cache and mode indicators; usage limits). User-facing docs, messages and code comments in `install.sh` and
 `tests/` are in Russian; commit messages are in English.
 
 ## Commands
@@ -34,8 +34,9 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 
 ## Rules for statusline.sh
 
-- **It runs after every assistant message, so forks are the cost.** Keep it to
-  one `jq` and two `git` processes. Helpers return through `REPLY` instead of
+- **It runs after every assistant message, so forks are the cost.** The
+  baseline is one `jq` and two `git` processes, plus two `date` calls per
+  absolute reset time shown. Helpers return through `REPLY` instead of
   `$(...)`. Do not add a subprocess per field.
 - The git cache (`STATUSLINE_GIT_CACHE`) is read with `read` and validated,
   never evaluated; a new git field must be added to `reset_git`,
@@ -43,7 +44,9 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 - **Every input field is optional.** Fields are absent or `null` before the
   first API response; the script must exit 0 and print something sensible for
   `{}` and for invalid JSON. Add new fields to the jq program in `read_input`
-  through the `int` / `str` filters.
+  through the `int` / `str` / `text` filters: `text` for anything displayed
+  as free text (it replaces control characters), `str` for values that are
+  only compared or validated before use.
 - **Check the schema before touching fields:**
   https://code.claude.com/docs/en/statusline#available-data. It changes;
   `rate_limits.seven_day_sonnet` was removed here because it is not in it.
