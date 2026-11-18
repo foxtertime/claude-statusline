@@ -86,6 +86,11 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 - **SemVer.** `VERSION` in `statusline.sh` is the single source of truth and a
   test checks it against the newest `CHANGELOG.md` section. Only bump it on a
   release branch.
+- **Wait for CI before closing an issue.** The macOS job runs the system
+  bash 3.2, which cannot be reproduced on Linux; push the feature branch as a
+  PR to `develop` and merge only when it is green. In tests, build JSON with
+  `printf` and a single-quoted format — `\"` inside `"$(...)"` is parsed
+  differently by bash 3.2.
 - A behavior change needs a test in `tests/run.sh` and a line under
   `[Unreleased]` in `CHANGELOG.md` (Russian, Keep a Changelog format).
 - Do not push, tag, or publish a release without being asked.
