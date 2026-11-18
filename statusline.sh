@@ -24,6 +24,7 @@ shopt -s extglob # visible_len strips escape sequences with *(...)
 VERSION="1.1.1"
 
 SUBJECT_MAX=40
+SESSION_MAX=30
 BRANCH_MIN=8   # never truncate a branch name below this many characters
 WIDTH_MARGIN=4 # columns left free for Claude Code's own padding
 MONTHS_RU=("" "янв" "фев" "мар" "апр" "май" "июн" "июл" "авг" "сен" "окт" "ноя" "дек")
@@ -70,7 +71,8 @@ if is_int "${COLUMNS:-}" && [ "$COLUMNS" -ge 20 ]; then
     MAX_WIDTH=$((COLUMNS - WIDTH_MARGIN))
 fi
 
-# Segments: git commit pr links effort context tokens cost cache
+# Segments: git commit pr links worktree effort fast agent context tokens cost
+#           cache vim session
 #           limits current weekly spend
 HIDE=",${STATUSLINE_HIDE:-},"
 HIDE=${HIDE// /,}
@@ -278,11 +280,14 @@ read_input() {
     pr_number="" pr_url="" pr_state="" pr_kind=""
     cost_usd="" cost_secs="" lines_added="" lines_removed=""
     cache_state="" cache_hit="" cache_expires=""
+    fast="" vim_mode="" agent="" session="" worktree=""
 
     local assignments
     assignments=$(jq -r '
         def int: if type == "number" then round else "" end;
         def str: if type == "string" then . else "" end;
+        # Free text shown as is: control characters would break the layout.
+        def text: str | gsub("\\p{Cc}"; " ");
         def money:
             if type == "number" and . > 0
             then (. * 100 | round) as $cents
@@ -292,8 +297,13 @@ read_input() {
         | (.rate_limits // {}) as $rl
         | ($rl.spend_limit // {}) as $spend
         | @sh "cwd=\(.workspace.current_dir // .cwd | str)",
-          @sh "model=\(.model.display_name | str)",
-          @sh "effort=\(.effort.level | str)",
+          @sh "model=\(.model.display_name | text)",
+          @sh "effort=\(.effort.level | text)",
+          @sh "fast=\(if .fast_mode == true then "1" else "" end)",
+          @sh "vim_mode=\(.vim.mode | text)",
+          @sh "agent=\(.agent.name | text)",
+          @sh "session=\(.session_name | text)",
+          @sh "worktree=\(.workspace.git_worktree // .worktree.name | text)",
           @sh "ctx_pct=\($ctx.used_percentage | int)",
           @sh "ctx_used=\($ctx.total_input_tokens | int)",
           @sh "ctx_size=\($ctx.context_window_size | int)",
@@ -427,6 +437,7 @@ render_location() {
     [ "$git_ahead" -gt 0 ] && out="${out} ${C_CYAN_B}↑${git_ahead}${C_RESET}"
     [ "$git_behind" -gt 0 ] && out="${out} ${C_RED_B}↓${git_behind}${C_RESET}"
     [ "$git_stash" -gt 0 ] && out="${out} ${C_DIM}≡${git_stash}${C_RESET}"
+    [ -n "$worktree" ] && shown worktree && out="${out} ${C_DIM}wt:${worktree}${C_RESET}"
     if [ -n "$pr_number" ] && shown pr; then
         render_pr
         out="${out} ${REPLY}"
@@ -493,6 +504,8 @@ render_model() {
     fi
     [ -n "$effort" ] && shown effort && out="${out} (${effort})"
     out="${out}${C_RESET}"
+    [ -n "$fast" ] && shown fast && out="${out} ${C_YELLOW_B}fast${C_RESET}"
+    [ -n "$agent" ] && shown agent && out="${out} ${C_CYAN_B}@${agent}${C_RESET}"
     SEGMENTS=("$out")
 
     if [ -n "$ctx_pct" ] && shown context; then
@@ -515,6 +528,18 @@ render_model() {
     if [ -n "$cache_state" ] && shown cache; then
         render_cache
         SEGMENTS+=("$REPLY")
+    fi
+
+    if [ -n "$vim_mode" ] && shown vim; then
+        local color=$C_GREEN_B
+        [ "$vim_mode" = NORMAL ] && color=$C_YELLOW_B
+        SEGMENTS+=("${color}${vim_mode}${C_RESET}")
+    fi
+
+    if [ -n "$session" ] && shown session; then
+        local name=$session
+        [ "${#name}" -gt "$SESSION_MAX" ] && name="${name:0:SESSION_MAX}…"
+        SEGMENTS+=("${C_DIM}${name}${C_RESET}")
     fi
 }
 

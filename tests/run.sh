@@ -282,6 +282,35 @@ equals "$(render '{"model":{"display_name":"M"}}' | sed -n 2p)" "M"
 equals "$(cache_line '{"caching_observed":false,"warm":false}')" "M"
 equals "$(STATUSLINE_HIDE=cache cache_line '{"caching_observed":true,"warm":true}')" "M"
 
+# --- индикаторы режимов -----------------------------------------------------
+
+# mode_line <поля json>
+mode_line() { line 2 "$(render "{\"model\":{\"display_name\":\"M\"},\"effort\":{\"level\":\"high\"},$1}")"; }
+
+t "режимы: fast, агент, vim, имя сессии"
+equals "$(mode_line '"fast_mode":true')" "M (high) fast"
+equals "$(mode_line '"fast_mode":false')" "M (high)"
+equals "$(mode_line '"agent":{"name":"security-reviewer"}')" "M (high) @security-reviewer"
+equals "$(mode_line '"vim":{"mode":"NORMAL"}')" "M (high) │ NORMAL"
+equals "$(mode_line '"session_name":"refactor auth"')" "M (high) │ refactor auth"
+equals "$(mode_line '"fast_mode":true,"agent":{"name":"a"},"vim":{"mode":"INSERT"},"session_name":"s"')" "M (high) fast @a │ INSERT │ s"
+
+t "режимы: длинное имя сессии обрезается, управляющие символы убираются"
+equals "$(mode_line '"session_name":"a very long session title that goes on and on"')" "M (high) │ a very long session title that…"
+equals "$(mode_line '"session_name":"two\nlines\u001b[31m"')" "M (high) │ two lines [31m"
+equals "$(render '{"session_name":"two\nlines"}' | wc -l | tr -d ' ')" "2"
+
+t "режимы: каждый скрывается отдельно"
+all='"fast_mode":true,"agent":{"name":"a"},"vim":{"mode":"INSERT"},"session_name":"s"'
+equals "$(STATUSLINE_HIDE=fast,agent mode_line "$all")" "M (high) │ INSERT │ s"
+equals "$(STATUSLINE_HIDE=vim,session mode_line "$all")" "M (high) fast @a"
+
+t "режимы: имя worktree рядом с веткой"
+new_repo wt
+equals "$(line 1 "$(STATUSLINE_HIDE=commit render "{\"workspace\":{\"current_dir\":\"$REPO\",\"git_worktree\":\"feature-xyz\"}}")")" "$REPO │ main [clean] wt:feature-xyz"
+contains "$(render "{\"workspace\":{\"current_dir\":\"$REPO\"},\"worktree\":{\"name\":\"my-feature\"}}")" "main [clean] wt:my-feature"
+lacks "$(STATUSLINE_HIDE=worktree render "{\"workspace\":{\"current_dir\":\"$REPO\",\"git_worktree\":\"x\"}}")" "wt:"
+
 # --- pull request -----------------------------------------------------------
 
 new_repo pr
