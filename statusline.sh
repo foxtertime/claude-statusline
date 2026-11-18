@@ -4,7 +4,8 @@
 # Reads the session JSON from stdin and prints:
 #   1. directory │ git branch, working tree state, last commit
 #   2. model (context size) (effort) │ context usage bar
-#   3+ one row per rate-limit window reported by Claude Code
+#   3+ one row per usage limit reported by Claude Code: 5-hour, 7-day,
+#      gateway spend limit
 #
 # Input schema: https://code.claude.com/docs/en/statusline#available-data
 # Requires: bash 3.2+, jq. Optional: git.
@@ -32,6 +33,13 @@ C_GREEN_B="${ESC}[1;32m"
 C_YELLOW_B="${ESC}[1;33m"
 C_RED_B="${ESC}[1;31m"
 C_CYAN_B="${ESC}[1;36m"
+
+# https://no-color.org
+if [ -n "${NO_COLOR:-}" ]; then
+    C_RESET="" C_DIR="" C_DIM="" C_MODEL="" C_TEXT=""
+    C_GREEN="" C_YELLOW="" C_RED=""
+    C_GREEN_B="" C_YELLOW_B="" C_RED_B="" C_CYAN_B=""
+fi
 
 SEP="${C_DIM} │ ${C_RESET}"
 
@@ -108,6 +116,7 @@ read_input() {
     cwd="" model="" effort=""
     ctx_pct="" ctx_used="" ctx_size=""
     five_pct="" five_reset="" week_pct="" week_reset=""
+    spend_pct="" spend_reset="" spend_usd=""
 
     local assignments
     assignments=$(jq -r '
@@ -115,6 +124,7 @@ read_input() {
         def str: if type == "string" then . else "" end;
         (.context_window // {}) as $ctx
         | (.rate_limits // {}) as $rl
+        | ($rl.spend_limit // {}) as $spend
         | @sh "cwd=\(.workspace.current_dir // .cwd | str)",
           @sh "model=\(.model.display_name | str)",
           @sh "effort=\(.effort.level | str)",
@@ -124,7 +134,13 @@ read_input() {
           @sh "five_pct=\($rl.five_hour.used_percentage | int)",
           @sh "five_reset=\($rl.five_hour.resets_at | int)",
           @sh "week_pct=\($rl.seven_day.used_percentage | int)",
-          @sh "week_reset=\($rl.seven_day.resets_at | int)"
+          @sh "week_reset=\($rl.seven_day.resets_at | int)",
+          @sh "spend_pct=\($spend.used_percentage | int)",
+          @sh "spend_reset=\($spend.resets_at | int)",
+          @sh "spend_usd=\(
+              if $spend.used_usd != null and $spend.limit_usd != null
+              then "$\($spend.used_usd) / $\($spend.limit_usd)"
+              else "" end)"
     ' 2>/dev/null) || return 0
     # Safe: every value is quoted by jq's @sh.
     eval "$assignments"
@@ -235,15 +251,16 @@ render_model() {
     REPLY=$out
 }
 
-# render_limit <label> <percent> <reset epoch>
+# render_limit <label> <percent> <reset epoch> [note]
 render_limit() {
-    local label=$1 pct=$2 reset=$3 out
+    local label=$1 pct=$2 reset=$3 note=${4:-} out
     bar "$pct"
     printf -v out '%s%-8s%s%s %s%s%%%s' "$C_DIM" "$label" "$C_RESET" "$REPLY" "$C_DIM" "$pct" "$C_RESET"
     if [ -n "$reset" ]; then
         fmt_reset "$reset"
         [ -n "$REPLY" ] && out="${out}  ${C_DIM}${REPLY}${C_RESET}"
     fi
+    [ -n "$note" ] && out="${out}  ${C_DIM}${note}${C_RESET}"
     REPLY=$out
 }
 
@@ -275,6 +292,11 @@ main() {
     fi
     if [ -n "$week_pct" ]; then
         render_limit "Weekly" "$week_pct" "$week_reset"
+        printf '%s\n' "$REPLY"
+    fi
+    # Present only behind a Claude apps gateway with a spend limit.
+    if [ -n "$spend_pct" ]; then
+        render_limit "Spend" "$spend_pct" "$spend_reset" "$spend_usd"
         printf '%s\n' "$REPLY"
     fi
 }
