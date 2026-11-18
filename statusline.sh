@@ -9,14 +9,62 @@
 #
 # Input schema: https://code.claude.com/docs/en/statusline#available-data
 # Requires: bash 3.2+, jq. Optional: git.
+#
+# Configuration (environment variables, see README):
+#   STATUSLINE_LANG       ru | en
+#   STATUSLINE_BAR_WIDTH  5..60, default 20
+#   STATUSLINE_WARN       percent where bars turn yellow, default 50
+#   STATUSLINE_CRIT       percent where bars turn red, default 80
+#   STATUSLINE_HIDE       comma-separated segments to hide
 
 set -u
 
 VERSION="1.1.1"
 
-BAR_WIDTH=20
 SUBJECT_MAX=40
-RU_MONTHS=("" "янв" "фев" "мар" "апр" "май" "июн" "июл" "авг" "сен" "окт" "ноя" "дек")
+MONTHS_RU=("" "янв" "фев" "мар" "апр" "май" "июн" "июл" "авг" "сен" "окт" "ноя" "дек")
+MONTHS_EN=("" "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec")
+
+# --- configuration ----------------------------------------------------------
+# A bad value must never break the line: anything invalid keeps the default.
+
+# is_int <value> — non-negative integer of at most four digits
+is_int() {
+    case $1 in
+        '' | *[!0-9]* | ?????*) return 1 ;;
+    esac
+}
+
+LANG_CODE=ru
+case ${STATUSLINE_LANG:-} in
+    ru | en) LANG_CODE=$STATUSLINE_LANG ;;
+esac
+
+BAR_WIDTH=20
+if is_int "${STATUSLINE_BAR_WIDTH:-}" &&
+    [ "$STATUSLINE_BAR_WIDTH" -ge 5 ] && [ "$STATUSLINE_BAR_WIDTH" -le 60 ]; then
+    BAR_WIDTH=$STATUSLINE_BAR_WIDTH
+fi
+
+WARN_AT=50
+CRIT_AT=80
+is_int "${STATUSLINE_WARN:-}" && WARN_AT=$STATUSLINE_WARN
+is_int "${STATUSLINE_CRIT:-}" && CRIT_AT=$STATUSLINE_CRIT
+if [ "$WARN_AT" -gt "$CRIT_AT" ]; then
+    WARN_AT=50
+    CRIT_AT=80
+fi
+
+# Segments: git commit effort context tokens limits current weekly spend
+HIDE=",${STATUSLINE_HIDE:-},"
+HIDE=${HIDE// /,}
+
+# shown <segment>
+shown() {
+    case $HIDE in
+        *",$1,"*) return 1 ;;
+    esac
+}
 
 # --- colors -----------------------------------------------------------------
 
@@ -54,11 +102,11 @@ repeat() {
     REPLY=${pad// /$1}
 }
 
-# level_color <percent> — green < 50, yellow < 80, red otherwise
+# level_color <percent> — green below WARN_AT, yellow below CRIT_AT, then red
 level_color() {
-    if [ "$1" -ge 80 ]; then
+    if [ "$1" -ge "$CRIT_AT" ]; then
         REPLY=$C_RED
-    elif [ "$1" -ge 50 ]; then
+    elif [ "$1" -ge "$WARN_AT" ]; then
         REPLY=$C_YELLOW
     else
         REPLY=$C_GREEN
@@ -94,7 +142,7 @@ fmt_tokens() {
     fi
 }
 
-# fmt_reset <epoch> — "19:30" if today, otherwise "10 мар, 19:30"
+# fmt_reset <epoch> — "19:30" if today, otherwise "10 мар, 19:30" / "Mar 10, 19:30"
 fmt_reset() {
     local ts=$1 fmt='+%Y%m%d %d %m %H:%M' out ymd day mon hhmm
     REPLY=""
@@ -103,8 +151,10 @@ fmt_reset() {
     read -r ymd day mon hhmm <<<"$out"
     if [ "$ymd" = "$(date +%Y%m%d)" ]; then
         REPLY=$hhmm
+    elif [ "$LANG_CODE" = ru ]; then
+        REPLY="$((10#$day)) ${MONTHS_RU[$((10#$mon))]}, $hhmm"
     else
-        REPLY="$((10#$day)) ${RU_MONTHS[$((10#$mon))]}, $hhmm"
+        REPLY="${MONTHS_EN[$((10#$mon))]} $((10#$day)), $hhmm"
     fi
 }
 
@@ -153,6 +203,7 @@ read_git() {
     git_staged=0 git_modified=0 git_untracked=0 git_conflicted=0
     git_ahead=0 git_behind=0 git_stash=0
 
+    shown git || return 0
     [ -d "$cwd" ] || return 0
 
     # --no-optional-locks: never contend for index.lock with Claude's own git
@@ -183,6 +234,7 @@ read_git() {
 
     [ "$git_branch" = "(detached)" ] && git_branch=${oid:0:7}
 
+    shown commit || return 0
     local log
     log=$(git --no-optional-locks -C "$cwd" log -1 --format='%cr%x09%s' 2>/dev/null) || return 0
     git_age=${log%%$'\t'*}
@@ -202,7 +254,12 @@ render_location() {
             "$HOME"/*) dir="~${dir#"$HOME"}" ;;
         esac
     fi
-    local out="${C_DIR}${dir}${C_RESET}${SEP}"
+    local out="${C_DIR}${dir}${C_RESET}"
+    if ! shown git; then
+        REPLY=$out
+        return
+    fi
+    out="${out}${SEP}"
 
     if [ -z "$git_branch" ]; then
         REPLY="${out}${C_DIM}[no git]${C_RESET}"
@@ -234,13 +291,13 @@ render_model() {
         fmt_tokens "$ctx_size"
         out="${out} (${REPLY})"
     fi
-    [ -n "$effort" ] && out="${out} (${effort})"
+    [ -n "$effort" ] && shown effort && out="${out} (${effort})"
     out="${out}${C_RESET}"
 
-    if [ -n "$ctx_pct" ]; then
+    if [ -n "$ctx_pct" ] && shown context; then
         bar "$ctx_pct"
         out="${out}${SEP}${C_DIM}Ctx${C_RESET} ${REPLY} ${C_TEXT}${ctx_pct}%"
-        if [ -n "$ctx_used" ] && [ -n "$ctx_size" ]; then
+        if [ -n "$ctx_used" ] && [ -n "$ctx_size" ] && shown tokens; then
             fmt_tokens "$ctx_used"
             out="${out} (${REPLY} / "
             fmt_tokens "$ctx_size"
@@ -275,7 +332,11 @@ main() {
     esac
 
     if ! command -v jq >/dev/null 2>&1; then
-        echo "claude-statusline: jq не найден"
+        if [ "$LANG_CODE" = ru ]; then
+            echo "claude-statusline: jq не найден"
+        else
+            echo "claude-statusline: jq not found"
+        fi
         return 0
     fi
 
@@ -286,16 +347,17 @@ main() {
     printf '%s\n' "$REPLY"
     render_model
     printf '%s\n' "$REPLY"
-    if [ -n "$five_pct" ]; then
+    shown limits || return 0
+    if [ -n "$five_pct" ] && shown current; then
         render_limit "Current" "$five_pct" "$five_reset"
         printf '%s\n' "$REPLY"
     fi
-    if [ -n "$week_pct" ]; then
+    if [ -n "$week_pct" ] && shown weekly; then
         render_limit "Weekly" "$week_pct" "$week_reset"
         printf '%s\n' "$REPLY"
     fi
     # Present only behind a Claude apps gateway with a spend limit.
-    if [ -n "$spend_pct" ]; then
+    if [ -n "$spend_pct" ] && shown spend; then
         render_limit "Spend" "$spend_pct" "$spend_reset" "$spend_usd"
         printf '%s\n' "$REPLY"
     fi
