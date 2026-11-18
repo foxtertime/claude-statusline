@@ -5,12 +5,16 @@
 ## [Unreleased]
 
 ### Добавлено
+- Индикаторы режимов: `fast`, имя агента, режим vim, имя сессии и имя git worktree ([#9](https://github.com/foxtertime/claude-statusline/issues/9)).
 - Состояние кэша промпта в строке 2: доля чтений из кэша и время, когда он остынет ([#8](https://github.com/foxtertime/claude-statusline/issues/8)).
 - `STATUSLINE_RESET=relative` — время до сброса лимита («через 2 ч 10 мин») вместо времени на часах ([#7](https://github.com/foxtertime/claude-statusline/issues/7)).
 - Сегмент сессии в строке 2: оценка стоимости, длительность, добавленные и удалённые строки ([#6](https://github.com/foxtertime/claude-statusline/issues/6)).
 - Открытый pull request текущей ветки рядом с веткой: номер, состояние ревью и ссылка; merge request GitLab — как `!123` ([#5](https://github.com/foxtertime/claude-statusline/issues/5)).
 - Строки подстраиваются под ширину терминала (`COLUMNS`): строка 1 по шагам теряет тему коммита, начало пути и хвост имени ветки, строка 2 — сегменты с конца ([#3](https://github.com/foxtertime/claude-statusline/issues/3)).
 - Настройка переменными окружения: `STATUSLINE_LANG` (язык дат), `STATUSLINE_BAR_WIDTH`, `STATUSLINE_WARN` / `STATUSLINE_CRIT` (пороги цвета) и `STATUSLINE_HIDE` (скрытие сегментов) ([#4](https://github.com/foxtertime/claude-statusline/issues/4)).
+
+### Исправлено
+- Управляющие символы в текстовых полях (имя модели, сессии, агента) больше не ломают строки.
 
 ## [1.1.1] — 2026-11-18
 
