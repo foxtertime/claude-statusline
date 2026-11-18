@@ -84,6 +84,17 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   in the PR template. `Closes #<n>` only auto-closes on merges into `main`,
   so after a PR lands in `develop`, close the issue yourself with a comment
   pointing at the PR.
+- **`main` and `develop` are protected on GitHub**, admins included: a direct
+  push is rejected with `GH006`, force pushes and deletion are off, and only
+  merge commits are allowed. A rejection means the change needs a PR — never
+  disable or loosen the protection to get something through; ask the user.
+  Tags are not protected, so the release tag is still pushed directly.
+- **Required checks are matched by job name:** `lint`,
+  `test (ubuntu-latest, bash)`, `test (macos-latest, /bin/bash)`, `commits`.
+  Renaming a CI job or changing the test matrix leaves every PR waiting on a
+  check that no longer exists. Change the names in the same PR as the
+  protection settings (`gh api repos/{owner}/{repo}/branches/<branch>/protection`),
+  for both branches, and tell the user.
 - **Gitflow.** Branch `feature/<n>-<name>` from `develop`. Releases go
   through `release/X.Y.Z`, hotfixes through `hotfix/X.Y.Z` from `main`; each
   of those needs two PRs, one into `main` and one into `develop`. The exact
