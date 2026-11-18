@@ -21,6 +21,7 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 export TZ=UTC NO_COLOR=1
 unset CLAUDE_CONFIG_DIR COLUMNS
 unset STATUSLINE_LANG STATUSLINE_BAR_WIDTH STATUSLINE_WARN STATUSLINE_CRIT STATUSLINE_HIDE
+unset STATUSLINE_RESET
 mkdir -p "$HOME"
 
 passed=0 failed=0 current=""
@@ -157,6 +158,19 @@ out=$(render '{"rate_limits":{"spend_limit":{"used_percentage":62.8,"resets_at":
 equals "$(line 3 "$out")" "Spend   ━━━━━━━━━━━━━─────── 63%  10 мар, 19:30  \$314.12 / \$500"
 out=$(render '{"rate_limits":{"spend_limit":{"used_percentage":130}}}')
 equals "$(line 3 "$out")" "Spend   ━━━━━━━━━━━━━━━━━━━━ 130%"
+
+t "лимиты: STATUSLINE_RESET=relative — время до сброса"
+# Запас в 30 секунд, чтобы результат не зависел от момента запуска.
+resets_in() { printf '{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%s}}}' "$(($(date +%s) + $1))"; }
+relative() { line 3 "$(STATUSLINE_RESET=relative render "$(resets_in "$1")")"; }
+equals "$(relative 7830)" "Current ━─────────────────── 5%  через 2 ч 10 мин"
+equals "$(relative 273630)" "Current ━─────────────────── 5%  через 3 д 4 ч"
+equals "$(relative 330)" "Current ━─────────────────── 5%  через 5 мин"
+equals "$(relative 20)" "Current ━─────────────────── 5%  через <1 мин"
+equals "$(relative -500)" "Current ━─────────────────── 5%  через <1 мин"
+equals "$(STATUSLINE_LANG=en relative 7830)" "Current ━─────────────────── 5%  in 2h 10m"
+equals "$(STATUSLINE_LANG=en relative 20)" "Current ━─────────────────── 5%  in <1m"
+equals "$(line 3 "$(STATUSLINE_RESET=bogus render "$(resets_in 0)")")" "Current ━─────────────────── 5%  $(date +%H:%M)"
 
 t "лимиты: seven_day_sonnet больше не выводится"
 lacks "$(render '{"rate_limits":{"seven_day_sonnet":{"used_percentage":8}}}')" "Sonnet"

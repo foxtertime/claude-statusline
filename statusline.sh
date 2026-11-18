@@ -16,6 +16,7 @@
 #   STATUSLINE_WARN       percent where bars turn yellow, default 50
 #   STATUSLINE_CRIT       percent where bars turn red, default 80
 #   STATUSLINE_HIDE       comma-separated segments to hide
+#   STATUSLINE_RESET      absolute | relative — how reset times are shown
 
 set -u
 shopt -s extglob # visible_len strips escape sequences with *(...)
@@ -57,6 +58,11 @@ if [ "$WARN_AT" -gt "$CRIT_AT" ]; then
     WARN_AT=50
     CRIT_AT=80
 fi
+
+RESET_MODE=absolute
+case ${STATUSLINE_RESET:-} in
+    absolute | relative) RESET_MODE=$STATUSLINE_RESET ;;
+esac
 
 # Claude Code exports the terminal size; 0 means "unknown, do not fit".
 MAX_WIDTH=0
@@ -224,8 +230,26 @@ fmt_duration() {
     fi
 }
 
-# fmt_reset <epoch> — "19:30" if today, otherwise "10 мар, 19:30" / "Mar 10, 19:30"
+# fmt_remaining <epoch> — "через 2 ч 10 мин" / "in 2h 10m"
+fmt_remaining() {
+    # EPOCHSECONDS needs bash 5; older shells pay one fork, once per run.
+    [ -n "$NOW" ] || NOW=${EPOCHSECONDS:-$(date +%s)}
+    local left=$(($1 - NOW))
+    if [ "$left" -lt 60 ]; then
+        if [ "$LANG_CODE" = ru ]; then REPLY="<1 мин"; else REPLY="<1m"; fi
+    else
+        fmt_duration "$left"
+    fi
+    if [ "$LANG_CODE" = ru ]; then REPLY="через $REPLY"; else REPLY="in $REPLY"; fi
+}
+
+# fmt_reset <epoch> — when a window resets. Absolute: "19:30" if today,
+# otherwise "10 мар, 19:30" / "Mar 10, 19:30". Relative: see fmt_remaining.
 fmt_reset() {
+    if [ "$RESET_MODE" = relative ]; then
+        fmt_remaining "$1"
+        return
+    fi
     local ts=$1 fmt='+%Y%m%d %d %m %H:%M' out ymd day mon hhmm
     REPLY=""
     # GNU date takes -d @epoch, BSD/macOS date takes -r epoch.
@@ -239,6 +263,8 @@ fmt_reset() {
         REPLY="${MONTHS_EN[$((10#$mon))]} $((10#$day)), $hhmm"
     fi
 }
+
+NOW="" # current epoch, filled on first use by fmt_remaining
 
 # --- input ------------------------------------------------------------------
 
