@@ -199,6 +199,35 @@ t "настройки: STATUSLINE_HIDE=commit"
 new_repo nocommit
 equals "$(line 1 "$(STATUSLINE_HIDE=commit render "$(in_dir "$REPO")")")" "$REPO │ main [clean]"
 
+# --- ширина терминала -------------------------------------------------------
+
+t "ширина: строка 1 упрощается по шагам"
+mkdir -p "$HOME/work/proj"
+git init -q -b main "$HOME/work/proj/app"
+git -C "$HOME/work/proj/app" commit -q --allow-empty -m initial
+app=$(in_dir "$HOME/work/proj/app")
+width() { line 1 "$(COLUMNS=$1 render "$app")"; }
+contains "$(line 1 "$(render "$app")")" "$tilde/work/proj/app │ main [clean] │ initial · "
+contains "$(width 200)" "$tilde/work/proj/app │ main [clean] │ initial · "
+equals "$(width 40)" "$tilde/work/proj/app │ main [clean]"
+equals "$(width 30)" "…/proj/app │ main [clean]"
+equals "$(width 24)" "…/app │ main [clean]"
+
+t "ширина: длинное имя ветки обрезается последним"
+git -C "$HOME/work/proj/app" checkout -q -b feature/very-long-branch-name
+equals "$(width 30)" "…/app │ feature/v… [clean]"
+equals "$(width 20)" "…/app │ feature/… [clean]"
+
+t "ширина: некорректный COLUMNS игнорируется"
+for bad in 0 19 abc 99999; do
+    contains "$(width "$bad")" "$tilde/work/proj/app │ feature/very-long-branch-name [clean] │ initial"
+done
+
+t "ширина: строка 2 теряет сегменты с конца, цвета не считаются"
+equals "$(line 2 "$(COLUMNS=64 render "$full")")" "M (200K) (high) │ Ctx ━━━━━━━━━━────────── 50% (100K / 200K)"
+equals "$(line 2 "$(COLUMNS=63 render "$full")")" "M (200K) (high)"
+contains "$(line 2 "$(COLUMNS=64 NO_COLOR='' render "$full")")" "100K / 200K"
+
 t "git: каталог вне репозитория"
 mkdir -p "$TMP/plain"
 contains "$(render "$(in_dir "$TMP/plain")")" "[no git]"
