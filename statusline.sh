@@ -12,7 +12,7 @@
 
 set -u
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 BAR_WIDTH=20
 SUBJECT_MAX=40
