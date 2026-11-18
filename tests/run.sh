@@ -228,6 +228,38 @@ equals "$(line 2 "$(COLUMNS=64 render "$full")")" "M (200K) (high) │ Ctx ━�
 equals "$(line 2 "$(COLUMNS=63 render "$full")")" "M (200K) (high)"
 contains "$(line 2 "$(COLUMNS=64 NO_COLOR='' render "$full")")" "100K / 200K"
 
+# --- pull request -----------------------------------------------------------
+
+new_repo pr
+# with_pr <json-объект pr>
+with_pr() { printf '{"workspace":{"current_dir":"%s"},"pr":%s}' "$REPO" "$1"; }
+pr_line() { line 1 "$(STATUSLINE_HIDE=commit render "$(with_pr "$1")")"; }
+
+t "pr: номер и состояние ревью"
+equals "$(pr_line '{"number":12,"url":"https://github.com/o/r/pull/12","review_state":"approved"}')" "$REPO │ main [clean] #12 approved"
+contains "$(pr_line '{"number":12,"review_state":"changes_requested"}')" "#12 changes"
+contains "$(pr_line '{"number":12,"review_state":"pending"}')" "#12 pending"
+contains "$(pr_line '{"number":12,"review_state":"draft"}')" "#12 draft"
+
+t "pr: без состояния, GitLab, отсутствует"
+equals "$(pr_line '{"number":12}')" "$REPO │ main [clean] #12"
+contains "$(pr_line '{"number":7,"kind":"mr","review_state":"approved"}')" "!7 approved"
+lacks "$(render "$(in_dir "$REPO")")" "#"
+lacks "$(STATUSLINE_HIDE="pr" render "$(with_pr '{"number":12}')")" "#12"
+
+t "pr: ссылка OSC 8, отключается NO_COLOR и STATUSLINE_HIDE=links"
+bel=$'\a'
+pr='{"number":12,"url":"https://github.com/o/r/pull/12"}'
+contains "$(NO_COLOR='' render "$(with_pr "$pr")")" "${esc}]8;;https://github.com/o/r/pull/12${bel}#12${esc}]8;;${bel}"
+lacks "$(render "$(with_pr "$pr")")" "${esc}]8"
+lacks "$(NO_COLOR='' STATUSLINE_HIDE=links render "$(with_pr "$pr")")" "${esc}]8"
+lacks "$(NO_COLOR='' render "$(with_pr '{"number":12,"url":"javascript:alert(1)"}')")" "${esc}]8"
+
+t "pr: адрес ссылки не учитывается в ширине"
+plain=$(line 1 "$(STATUSLINE_HIDE=commit render "$(with_pr "$pr")")")
+linked=$(line 1 "$(STATUSLINE_HIDE=commit NO_COLOR='' COLUMNS=$((${#plain} + 4)) render "$(with_pr "$pr")")")
+contains "$linked" "$REPO"
+
 t "git: каталог вне репозитория"
 mkdir -p "$TMP/plain"
 contains "$(render "$(in_dir "$TMP/plain")")" "[no git]"
