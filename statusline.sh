@@ -70,7 +70,7 @@ if is_int "${COLUMNS:-}" && [ "$COLUMNS" -ge 20 ]; then
     MAX_WIDTH=$((COLUMNS - WIDTH_MARGIN))
 fi
 
-# Segments: git commit pr links effort context tokens cost
+# Segments: git commit pr links effort context tokens cost cache
 #           limits current weekly spend
 HIDE=",${STATUSLINE_HIDE:-},"
 HIDE=${HIDE// /,}
@@ -277,6 +277,7 @@ read_input() {
     spend_pct="" spend_reset="" spend_usd=""
     pr_number="" pr_url="" pr_state="" pr_kind=""
     cost_usd="" cost_secs="" lines_added="" lines_removed=""
+    cache_state="" cache_hit="" cache_expires=""
 
     local assignments
     assignments=$(jq -r '
@@ -313,7 +314,13 @@ read_input() {
           @sh "cost_usd=\(.cost.total_cost_usd | money)",
           @sh "cost_secs=\(.cost.total_duration_ms | if type == "number" then . / 1000 | floor else "" end)",
           @sh "lines_added=\(.cost.total_lines_added | int)",
-          @sh "lines_removed=\(.cost.total_lines_removed | int)"
+          @sh "lines_removed=\(.cost.total_lines_removed | int)",
+          @sh "cache_state=\(
+              if .prompt_cache.caching_observed != true then ""
+              elif .prompt_cache.warm == true then "warm"
+              else "cold" end)",
+          @sh "cache_hit=\(.prompt_cache.hit_ratio | if type == "number" then . * 100 | round else "" end)",
+          @sh "cache_expires=\(.prompt_cache.expires_at | int)"
     ' 2>/dev/null) || return 0
     # Safe: every value is quoted by jq's @sh.
     eval "$assignments"
@@ -504,6 +511,31 @@ render_model() {
         render_cost
         [ -n "$REPLY" ] && SEGMENTS+=("$REPLY")
     fi
+
+    if [ -n "$cache_state" ] && shown cache; then
+        render_cache
+        SEGMENTS+=("$REPLY")
+    fi
+}
+
+# render_cache — "Cache 91% · 19:30" while the prompt cache is warm (hit ratio
+# and when it goes cold), "Cache cold" once it has expired
+render_cache() {
+    if [ "$cache_state" = cold ]; then
+        REPLY="${C_DIM}Cache${C_RESET} ${C_YELLOW}cold${C_RESET}"
+        return
+    fi
+    local out="${C_DIM}Cache${C_RESET}"
+    [ -n "$cache_hit" ] && out="${out} ${C_GREEN}${cache_hit}%${C_RESET}"
+    if [ -n "$cache_expires" ]; then
+        fmt_reset "$cache_expires"
+        if [ -n "$REPLY" ]; then
+            [ -n "$cache_hit" ] && out="${out}${C_DIM} ·${C_RESET}"
+            out="${out} ${C_DIM}${REPLY}${C_RESET}"
+        fi
+    fi
+    [ -z "${cache_hit}${cache_expires}" ] && out="${out} ${C_GREEN}warm${C_RESET}"
+    REPLY=$out
 }
 
 # render_cost — "$1.24 · 38m · +156 −23"; empty when there is nothing to show

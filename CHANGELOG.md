@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Добавлено
+- Состояние кэша промпта в строке 2: доля чтений из кэша и время, когда он остынет ([#8](https://github.com/foxtertime/claude-statusline/issues/8)).
 - `STATUSLINE_RESET=relative` — время до сброса лимита («через 2 ч 10 мин») вместо времени на часах ([#7](https://github.com/foxtertime/claude-statusline/issues/7)).
 - Сегмент сессии в строке 2: оценка стоимости, длительность, добавленные и удалённые строки ([#6](https://github.com/foxtertime/claude-statusline/issues/6)).
 - Открытый pull request текущей ветки рядом с веткой: номер, состояние ревью и ссылка; merge request GitLab — как `!123` ([#5](https://github.com/foxtertime/claude-statusline/issues/5)).
