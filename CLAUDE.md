@@ -51,6 +51,10 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   userlands. No associative arrays, `${var,,}`, `mapfile`, `printf '%(…)T'`,
   or GNU-only flags without a BSD fallback.
 - All color variables must be cleared in the `NO_COLOR` block.
+- **Options are `STATUSLINE_*` environment variables**, validated in the
+  configuration block; an invalid value silently keeps the default. A new
+  segment gets a name for `STATUSLINE_HIDE` (checked with `shown <name>`) and
+  a row in the README tables. Defaults must reproduce the previous output.
 
 ## Workflow
 

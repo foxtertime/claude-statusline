@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Добавлено
+- Настройка переменными окружения: `STATUSLINE_LANG` (язык дат), `STATUSLINE_BAR_WIDTH`, `STATUSLINE_WARN` / `STATUSLINE_CRIT` (пороги цвета) и `STATUSLINE_HIDE` (скрытие сегментов) ([#4](https://github.com/foxtertime/claude-statusline/issues/4)).
+
 ## [1.1.1] — 2026-11-18
 
 Сам статуслайн и установщик не изменились.

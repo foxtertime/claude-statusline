@@ -19,7 +19,8 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 export TZ=UTC NO_COLOR=1
-unset CLAUDE_CONFIG_DIR
+unset CLAUDE_CONFIG_DIR COLUMNS
+unset STATUSLINE_LANG STATUSLINE_BAR_WIDTH STATUSLINE_WARN STATUSLINE_CRIT STATUSLINE_HIDE
 mkdir -p "$HOME"
 
 passed=0 failed=0 current=""
@@ -160,7 +161,43 @@ equals "$(line 3 "$out")" "Spend   ━━━━━━━━━━━━━━━
 t "лимиты: seven_day_sonnet больше не выводится"
 lacks "$(render '{"rate_limits":{"seven_day_sonnet":{"used_percentage":8}}}')" "Sonnet"
 
+# --- настройки --------------------------------------------------------------
+
+full='{"model":{"display_name":"M"},"effort":{"level":"high"},"context_window":{"used_percentage":50,"total_input_tokens":100000,"context_window_size":200000},"rate_limits":{"five_hour":{"used_percentage":10},"seven_day":{"used_percentage":20,"resets_at":1741635000},"spend_limit":{"used_percentage":30}}}'
+
+t "настройки: STATUSLINE_LANG"
+contains "$(STATUSLINE_LANG=en render "$full")" "20%  Mar 10, 19:30"
+contains "$(STATUSLINE_LANG=ru render "$full")" "20%  10 мар, 19:30"
+contains "$(STATUSLINE_LANG=xx render "$full")" "20%  10 мар, 19:30"
+
+t "настройки: STATUSLINE_BAR_WIDTH"
+equals "$(line 2 "$(STATUSLINE_BAR_WIDTH=10 render "$full")")" "M (200K) (high) │ Ctx ━━━━━───── 50% (100K / 200K)"
+for bad in 4 61 abc -5 99999; do
+    contains "$(STATUSLINE_BAR_WIDTH=$bad render "$full")" "Ctx ━━━━━━━━━━────────── 50%"
+done
+
+t "настройки: STATUSLINE_WARN и STATUSLINE_CRIT"
+ctx50() { printf '{"context_window":{"used_percentage":50}}' | NO_COLOR='' "$@" "$BASH" "$SCRIPT"; }
+contains "$(ctx50 env STATUSLINE_WARN=60)" "${esc}[32m━"
+contains "$(ctx50 env STATUSLINE_CRIT=50)" "${esc}[31m━"
+contains "$(ctx50 env STATUSLINE_WARN=90 STATUSLINE_CRIT=10)" "${esc}[33m━"
+contains "$(ctx50 env STATUSLINE_WARN=abc STATUSLINE_CRIT=x)" "${esc}[33m━"
+
+t "настройки: STATUSLINE_HIDE"
+equals "$(line 2 "$(STATUSLINE_HIDE=effort,tokens render "$full")")" "M (200K) │ Ctx ━━━━━━━━━━────────── 50%"
+equals "$(line 2 "$(STATUSLINE_HIDE=context render "$full")")" "M (200K) (high)"
+equals "$(STATUSLINE_HIDE=limits render "$full" | wc -l | tr -d ' ')" "2"
+out=$(STATUSLINE_HIDE="current, spend" render "$full")
+contains "$out" "Weekly"
+lacks "$out" "Current"
+lacks "$out" "Spend"
+equals "$(line 1 "$(STATUSLINE_HIDE=git render '{"cwd":"/x"}')")" "/x"
+
 # --- git --------------------------------------------------------------------
+
+t "настройки: STATUSLINE_HIDE=commit"
+new_repo nocommit
+equals "$(line 1 "$(STATUSLINE_HIDE=commit render "$(in_dir "$REPO")")")" "$REPO │ main [clean]"
 
 t "git: каталог вне репозитория"
 mkdir -p "$TMP/plain"
