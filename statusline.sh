@@ -26,7 +26,7 @@
 set -u
 shopt -s extglob # visible_len strips escape sequences with *(...)
 
-VERSION="1.1.1"
+VERSION="1.2.0"
 
 SUBJECT_MAX=40
 SESSION_MAX=30

@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-11-19
+
 ### Добавлено
 - Имя ветки — кликабельная ссылка на ветку на GitHub или на репозиторий на другом хостинге ([#11](https://github.com/foxtertime/claude-statusline/issues/11)).
 - `STATUSLINE_GIT_CACHE` — кэш состояния git на заданное число секунд для очень больших репозиториев; по умолчанию выключен ([#10](https://github.com/foxtertime/claude-statusline/issues/10)).
@@ -66,7 +68,8 @@
 - Установщик `install.sh`: копирует скрипт в `~/.claude/statusline.sh`, прописывает `statusLine` в `settings.json` с бэкапом; `git` — опциональная зависимость.
 - Флаг `--version` / `-v` у скрипта.
 
-[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/foxtertime/claude-statusline/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/foxtertime/claude-statusline/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/foxtertime/claude-statusline/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/foxtertime/claude-statusline/releases/tag/v1.0.0
