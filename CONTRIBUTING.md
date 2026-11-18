@@ -76,7 +76,7 @@ git push origin main develop
 git push origin vX.Y.Z
 ```
 
-Тег пушится отдельной командой: при выпуске 1.1.0 ветки и тег ушли одним `git push`, и GitHub запустил workflow только для `main` ([#1](https://github.com/foxtertime/claude-statusline/issues/1)).
+Тег пушится отдельной командой, после веток. При выпуске 1.1.0 всё ушло одним `git push` — тем же, что впервые добавил workflow-файлы, — и `Release` не запустился ([#1](https://github.com/foxtertime/claude-statusline/issues/1)); точная причина не установлена, при выпуске 1.1.1 отдельный пуш тега сработал.
 
 После пуша тега workflow `Release` проверяет, что тег совпадает с `VERSION`, и публикует релиз на GitHub с текстом из `CHANGELOG.md`. Если он не запустился, его можно запустить вручную для уже существующего тега:
 
