@@ -11,7 +11,7 @@
 # Requires: bash 3.2+, jq. Optional: git.
 #
 # Configuration (environment variables, see README):
-#   STATUSLINE_LANG       ru | en
+#   STATUSLINE_LANG       ru | en, default from the locale
 #   STATUSLINE_BAR_WIDTH  5..60, default 20
 #   STATUSLINE_WARN       percent where bars turn yellow, default 50
 #   STATUSLINE_CRIT       percent where bars turn red, default 80
@@ -41,9 +41,16 @@ is_int() {
     esac
 }
 
-LANG_CODE=ru
+# Language: explicit setting first, then the locale that governs dates, with
+# the usual precedence LC_ALL > LC_TIME > LANG. Russian for ru*, else English.
+LANG_CODE=en
 case ${STATUSLINE_LANG:-} in
     ru | en) LANG_CODE=$STATUSLINE_LANG ;;
+    *)
+        case ${LC_ALL:-${LC_TIME:-${LANG:-}}} in
+            ru | ru[_.@]*) LANG_CODE=ru ;;
+        esac
+        ;;
 esac
 
 BAR_WIDTH=20
