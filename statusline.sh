@@ -215,18 +215,54 @@ visible_len() {
     local plain=${1//$ESC\[*([0-9;])m/}
     plain=${plain//$ESC\]8;;*([!$BEL])$BEL/}
     local width=${#plain}
-    # Only characters outside ASCII and our own narrow glyphs can be wide;
-    # most lines have none, so the loop below rarely runs.
-    local rest=${plain//[ -~]/}
-    rest=${rest//[━─│·…↑↓≡−]/}
-    local i cp
-    for ((i = 0; i < ${#rest}; i++)); do
-        printf -v cp '%d' "'${rest:i:1}"
-        if [ "$cp" -ge 4352 ] && is_wide "$cp"; then
-            width=$((width + 1))
-        fi
+    wide_count "$plain"
+    REPLY=$((width + REPLY))
+}
+
+# wide_count <string> — how many wide characters it contains.
+# Works on UTF-8 bytes in the C locale, because bash 3.2 cannot be trusted
+# with characters here: its printf "'c" returns the first byte, and its
+# bracket ranges compare by collation, so [ -~] can match non-ASCII.
+# `local LC_ALL=C` is undone on return in every bash version we support.
+wide_count() {
+    local LC_ALL=C
+    local s=$1 g
+    s=${s//[$'\001'-$'\177']/}
+    REPLY=0
+    [ -z "$s" ] && return 0
+    # Our own glyphs and two-byte sequences (Latin, Cyrillic...) are narrow.
+    for g in ━ ─ │ … ↑ ↓ ≡ −; do
+        s=${s//$g/}
     done
-    REPLY=$width
+    s=${s//[$'\302'-$'\337'][$'\200'-$'\277']/}
+    local i=0 j len=${#s} b cp n count=0
+    while [ "$i" -lt "$len" ]; do
+        byte_at "$s" "$i"
+        b=$REPLY
+        if [ "$b" -ge 240 ]; then
+            n=4 cp=$((b & 7))
+        elif [ "$b" -ge 224 ]; then
+            n=3 cp=$((b & 15))
+        else
+            i=$((i + 1))
+            continue
+        fi
+        for ((j = 1; j < n; j++)); do
+            byte_at "$s" $((i + j))
+            cp=$(((cp << 6) | (REPLY & 63)))
+        done
+        [ "$cp" -ge 4352 ] && is_wide "$cp" && count=$((count + 1))
+        i=$((i + n))
+    done
+    REPLY=$count
+}
+
+# byte_at <string> <index> — unsigned value of one byte (C locale only)
+byte_at() {
+    printf -v REPLY '%d' "'${1:$2:1}"
+    # bash 3.2 returns a signed char.
+    [ "$REPLY" -lt 0 ] && REPLY=$((REPLY + 256))
+    return 0
 }
 
 # is_wide <code point> — East Asian Wide/Fullwidth blocks and emoji
