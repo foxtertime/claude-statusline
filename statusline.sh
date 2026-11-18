@@ -17,6 +17,7 @@
 #   STATUSLINE_CRIT       percent where bars turn red, default 80
 #   STATUSLINE_HIDE       comma-separated segments to hide
 #   STATUSLINE_RESET      absolute | relative — how reset times are shown
+#   STATUSLINE_GIT_CACHE  seconds to reuse git state for, default 0 (off)
 
 set -u
 shopt -s extglob # visible_len strips escape sequences with *(...)
@@ -64,6 +65,11 @@ RESET_MODE=absolute
 case ${STATUSLINE_RESET:-} in
     absolute | relative) RESET_MODE=$STATUSLINE_RESET ;;
 esac
+
+# Reusing git state only pays off in very large repositories, so it is opt-in.
+GIT_CACHE_TTL=0
+is_int "${STATUSLINE_GIT_CACHE:-}" && GIT_CACHE_TTL=$STATUSLINE_GIT_CACHE
+GIT_CACHE_DIR="${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}/claude-statusline"
 
 # Claude Code exports the terminal size; 0 means "unknown, do not fit".
 MAX_WIDTH=0
@@ -234,8 +240,8 @@ fmt_duration() {
 
 # fmt_remaining <epoch> — "через 2 ч 10 мин" / "in 2h 10m"
 fmt_remaining() {
-    # EPOCHSECONDS needs bash 5; older shells pay one fork, once per run.
-    [ -n "$NOW" ] || NOW=${EPOCHSECONDS:-$(date +%s)}
+
+    set_now
     local left=$(($1 - NOW))
     if [ "$left" -lt 60 ]; then
         if [ "$LANG_CODE" = ru ]; then REPLY="<1 мин"; else REPLY="<1m"; fi
@@ -266,7 +272,12 @@ fmt_reset() {
     fi
 }
 
-NOW="" # current epoch, filled on first use by fmt_remaining
+# set_now — fill NOW with the current epoch, once per run.
+# EPOCHSECONDS needs bash 5; older shells pay one fork.
+NOW=""
+set_now() {
+    [ -n "$NOW" ] || NOW=${EPOCHSECONDS:-$(date +%s)}
+}
 
 # --- input ------------------------------------------------------------------
 
@@ -281,6 +292,7 @@ read_input() {
     cost_usd="" cost_secs="" lines_added="" lines_removed=""
     cache_state="" cache_hit="" cache_expires=""
     fast="" vim_mode="" agent="" session="" worktree=""
+    session_id=""
 
     local assignments
     assignments=$(jq -r '
@@ -303,6 +315,7 @@ read_input() {
           @sh "vim_mode=\(.vim.mode | text)",
           @sh "agent=\(.agent.name | text)",
           @sh "session=\(.session_name | text)",
+          @sh "session_id=\(.session_id | str)",
           @sh "worktree=\(.workspace.git_worktree // .worktree.name | text)",
           @sh "ctx_pct=\($ctx.used_percentage | int)",
           @sh "ctx_used=\($ctx.total_input_tokens | int)",
@@ -338,12 +351,77 @@ read_input() {
 
 # --- git --------------------------------------------------------------------
 
-read_git() {
+reset_git() {
     git_branch="" git_subject="" git_age=""
     git_staged=0 git_modified=0 git_untracked=0 git_conflicted=0
     git_ahead=0 git_behind=0 git_stash=0
+}
 
+# read_git — git state for cwd, from the cache when it is enabled and fresh
+read_git() {
+    reset_git
     shown git || return 0
+
+    local cache=""
+    if [ "$GIT_CACHE_TTL" -gt 0 ]; then
+        # session_id becomes part of a file name: accept only a safe one.
+        case $session_id in
+            '' | *[!A-Za-z0-9_-]*) ;;
+            *) cache="$GIT_CACHE_DIR/git-$session_id" ;;
+        esac
+    fi
+    if [ -n "$cache" ]; then
+        set_now
+        load_git_cache "$cache" && return 0
+        reset_git
+    fi
+
+    query_git
+    [ -n "$cache" ] && save_git_cache "$cache"
+    return 0
+}
+
+# The cache is one value per line: timestamp, directory, then the git state.
+# It is read with `read`, never evaluated, and anything unexpected in it is
+# treated as a miss.
+
+# load_git_cache <file> — succeeds only on a fresh entry for the same cwd
+load_git_cache() {
+    local stamp dir n
+    [ -r "$1" ] || return 1
+    {
+        IFS= read -r stamp && IFS= read -r dir &&
+            IFS= read -r git_branch &&
+            IFS= read -r git_staged && IFS= read -r git_modified &&
+            IFS= read -r git_untracked && IFS= read -r git_conflicted &&
+            IFS= read -r git_ahead && IFS= read -r git_behind &&
+            IFS= read -r git_stash &&
+            IFS= read -r git_age && IFS= read -r git_subject
+    } <"$1" || return 1
+    for n in "$stamp" "$git_staged" "$git_modified" "$git_untracked" \
+        "$git_conflicted" "$git_ahead" "$git_behind" "$git_stash"; do
+        case $n in
+            '' | *[!0-9]*) return 1 ;;
+        esac
+    done
+    [ "$dir" = "$cwd" ] && [ "$stamp" -le "$NOW" ] && [ $((NOW - stamp)) -lt "$GIT_CACHE_TTL" ]
+}
+
+# save_git_cache <file>
+save_git_cache() {
+    if [ ! -d "$GIT_CACHE_DIR" ]; then
+        (umask 077 && mkdir -p "$GIT_CACHE_DIR") 2>/dev/null || return 0
+    fi
+    # First write of a session: sweep entries left by sessions long gone.
+    [ -e "$1" ] || find "$GIT_CACHE_DIR" -name 'git-*' -mtime +7 -exec rm -f {} + 2>/dev/null
+    printf '%s\n' "$NOW" "$cwd" "$git_branch" \
+        "$git_staged" "$git_modified" "$git_untracked" "$git_conflicted" \
+        "$git_ahead" "$git_behind" "$git_stash" \
+        "$git_age" "$git_subject" 2>/dev/null >"$1"
+}
+
+# query_git — ask git: one status call, one log call
+query_git() {
     [ -d "$cwd" ] || return 0
 
     # --no-optional-locks: never contend for index.lock with Claude's own git

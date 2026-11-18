@@ -37,6 +37,9 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 - **It runs after every assistant message, so forks are the cost.** Keep it to
   one `jq` and two `git` processes. Helpers return through `REPLY` instead of
   `$(...)`. Do not add a subprocess per field.
+- The git cache (`STATUSLINE_GIT_CACHE`) is read with `read` and validated,
+  never evaluated; a new git field must be added to `reset_git`,
+  `load_git_cache` and `save_git_cache` together, in the same order.
 - **Every input field is optional.** Fields are absent or `null` before the
   first API response; the script must exit 0 and print something sensible for
   `{}` and for invalid JSON. Add new fields to the jq program in `read_input`
