@@ -1,198 +1,282 @@
 #!/usr/bin/env bash
-# Claude Code status line script
-# Shows: directory  branch  model (ctx size)  context bar
+# claude-statusline — status line for Claude Code.
+#
+# Reads the session JSON from stdin and prints:
+#   1. directory │ git branch, working tree state, last commit
+#   2. model (context size) (effort) │ context usage bar
+#   3+ one row per rate-limit window reported by Claude Code
+#
+# Input schema: https://code.claude.com/docs/en/statusline#available-data
+# Requires: bash 3.2+, jq. Optional: git.
 
-# Use C locale for numeric formatting (bc emits "." which printf rejects under ru_RU etc.)
-export LC_NUMERIC=C
+set -u
 
 VERSION="1.0.0"
-if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-v" ]; then
-    echo "claude-statusline $VERSION"
-    exit 0
-fi
 
-input=$(cat)
+BAR_WIDTH=20
+SUBJECT_MAX=40
+RU_MONTHS=("" "янв" "фев" "мар" "апр" "май" "июн" "июл" "авг" "сен" "окт" "ноя" "дек")
 
-cwd=$(echo "$input"     | jq -r '.cwd // .workspace.current_dir // "?"')
-model=$(echo "$input"   | jq -r '.model.display_name // "?"')
-model_id=$(echo "$input" | jq -r '.model.id // ""')
-used_pct=$(echo "$input"      | jq -r '.context_window.used_percentage // empty')
-used_tokens=$(echo "$input"   | jq -r '.context_window.total_input_tokens // empty')
-ctx_window=$(echo "$input"    | jq -r '.context_window.context_window_size // empty')
-effort=$(echo "$input"        | jq -r '.effort.level // empty')
+# --- colors -----------------------------------------------------------------
 
-# Rate limit usage (5-hour rolling window + 7-day window)
-five_pct=$(echo "$input"    | jq -r '.rate_limits.five_hour.used_percentage // empty')
-five_reset=$(echo "$input"  | jq -r '.rate_limits.five_hour.resets_at // empty')
-seven_pct=$(echo "$input"   | jq -r '.rate_limits.seven_day.used_percentage // empty')
-seven_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
-sonnet_pct=$(echo "$input"   | jq -r '.rate_limits.seven_day_sonnet.used_percentage // empty')
-sonnet_reset=$(echo "$input" | jq -r '.rate_limits.seven_day_sonnet.resets_at // empty')
+ESC=$'\033'
+C_RESET="${ESC}[0m"
+C_DIR="${ESC}[1;36m"
+C_DIM="${ESC}[2;37m"
+C_MODEL="${ESC}[1;35m"
+C_TEXT="${ESC}[37m"
+C_GREEN="${ESC}[32m"
+C_YELLOW="${ESC}[33m"
+C_RED="${ESC}[31m"
+C_GREEN_B="${ESC}[1;32m"
+C_YELLOW_B="${ESC}[1;33m"
+C_RED_B="${ESC}[1;31m"
+C_CYAN_B="${ESC}[1;36m"
 
-# Shorten home directory to ~
-home="$HOME"
-short_cwd="${cwd/#$home/\~}"
+SEP="${C_DIM} │ ${C_RESET}"
 
-# Git info
-git_branch="" git_staged=0 git_modified=0 git_untracked=0 git_conflicted=0 git_ahead=0 git_behind=0 git_stash=0
-if git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1; then
-    git_branch=$(git -C "$cwd" symbolic-ref --short HEAD 2>/dev/null \
-        || git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
-    git_st=$(git -C "$cwd" status --porcelain=v1 2>/dev/null)
-    git_staged=$(printf '%s\n' "$git_st"    | grep -c '^[MADRCT]' 2>/dev/null); git_staged=${git_staged:-0}
-    git_modified=$(printf '%s\n' "$git_st"  | grep -c '^.[MD]'    2>/dev/null); git_modified=${git_modified:-0}
-    git_untracked=$(printf '%s\n' "$git_st" | grep -c '^??'       2>/dev/null); git_untracked=${git_untracked:-0}
-    git_conflicted=$(printf '%s\n' "$git_st"| grep -c '^[UA][UA]\|^DD\|^AA' 2>/dev/null); git_conflicted=${git_conflicted:-0}
-    ab=$(git -C "$cwd" rev-list --count --left-right "@{upstream}...HEAD" 2>/dev/null)
-    [ -n "$ab" ] && git_behind=$(echo "$ab" | cut -f1) && git_ahead=$(echo "$ab" | cut -f2)
-    git_stash=$(git -C "$cwd" stash list 2>/dev/null | wc -l)
-    git_last_commit=$(git -C "$cwd" log -1 --format="%s" 2>/dev/null | cut -c1-40)
-    git_last_commit_time=$(git -C "$cwd" log -1 --format="%cr" 2>/dev/null)
-fi
+# --- helpers ----------------------------------------------------------------
+# Helpers return their result in REPLY to avoid a subshell per call: the
+# script runs after every assistant message, so forks are the main cost.
 
-# Context window size label — derived from the model's real context window
-ctx_size="200K"
-if [ -n "$ctx_window" ]; then
-    cw_int=${ctx_window%%.*}
-    if [ "$cw_int" -ge 1000000 ] 2>/dev/null; then
-        whole=$(( cw_int / 1000000 ))
-        frac=$(( (cw_int % 1000000) / 100000 ))   # first decimal of the millions value
-        if [ "$frac" -eq 0 ]; then ctx_size="${whole}M"; else ctx_size="${whole}.${frac}M"; fi
-    elif [ "$cw_int" -ge 1000 ] 2>/dev/null; then
-        ctx_size="$(( cw_int / 1000 ))K"
+# repeat <char> <count>
+repeat() {
+    local pad
+    printf -v pad '%*s' "$2" ''
+    REPLY=${pad// /$1}
+}
+
+# level_color <percent> — green < 50, yellow < 80, red otherwise
+level_color() {
+    if [ "$1" -ge 80 ]; then
+        REPLY=$C_RED
+    elif [ "$1" -ge 50 ]; then
+        REPLY=$C_YELLOW
+    else
+        REPLY=$C_GREEN
     fi
-fi
+}
 
-# Context fill bar (20 block segments using unicode block chars)
-bar_str=""
-if [ -n "$used_pct" ]; then
-    filled=$(printf "%.0f" "$(echo "$used_pct * 20 / 100" | bc -l 2>/dev/null || echo 0)")
-    filled=$(( filled > 20 ? 20 : filled ))
-    empty=$(( 20 - filled ))
-    blocks_filled=""
-    blocks_empty=""
-    for i in $(seq 1 "$filled"); do blocks_filled="${blocks_filled}\xe2\x94\x81"; done   # ━ U+2501 HEAVY HORIZONTAL
-    for i in $(seq 1 "$empty");  do blocks_empty="${blocks_empty}\xe2\x94\x80"; done     # ─ U+2500 LIGHT HORIZONTAL
-    bar_str="filled:${blocks_filled}:empty:${blocks_empty}:pct:$(printf '%.0f' "$used_pct")"
-fi
+# bar <percent> — colored bar of BAR_WIDTH cells
+bar() {
+    local pct=$1 filled color
+    filled=$(((pct * BAR_WIDTH + 50) / 100))
+    [ "$filled" -gt "$BAR_WIDTH" ] && filled=$BAR_WIDTH
+    [ "$filled" -lt 0 ] && filled=0
+    level_color "$pct"
+    color=$REPLY
+    repeat "━" "$filled"
+    local full=$REPLY
+    repeat "─" "$((BAR_WIDTH - filled))"
+    REPLY="${color}${full}${C_DIM}${REPLY}${C_RESET}"
+}
 
-# ANSI color codes
-C_RESET="\e[0m"
-C_BOLD="\e[1m"
-C_DIM="\e[2m"
-C_CYAN="\e[1;36m"       # bold cyan — directory
-C_GRAY="\e[2;37m"       # dim gray — separator
-C_GREEN="\e[1;32m"      # bold green — git branch
-C_MAGENTA="\e[1;35m"    # bold magenta — model name
-C_BAR_EMPTY="\e[2;37m"  # dim gray — empty bar blocks
-C_BAR_PCT="\e[37m"      # white — percentage
+# fmt_tokens <count> — 950, 125K, 1M, 1.5M
+fmt_tokens() {
+    local n=$1
+    if [ "$n" -ge 1000000 ]; then
+        local frac=$(((n % 1000000) / 100000))
+        REPLY="$((n / 1000000))"
+        [ "$frac" -gt 0 ] && REPLY="${REPLY}.${frac}"
+        REPLY="${REPLY}M"
+    elif [ "$n" -ge 1000 ]; then
+        REPLY="$((n / 1000))K"
+    else
+        REPLY="$n"
+    fi
+}
 
-# Unicode separator
-SEP="${C_GRAY} \xe2\x94\x82 ${C_RESET}"   # │
-C_LABEL="\e[2;37m"         # dim gray — usage row labels
-
-# Format a reset timestamp in Russian, 24h: time-only if today, else "10 мар, 19:30"
+# fmt_reset <epoch> — "19:30" if today, otherwise "10 мар, 19:30"
 fmt_reset() {
-    local ts="$1"
-    [ -z "$ts" ] && return
-    local ru_months=("" "янв" "фев" "мар" "апр" "май" "июн" "июл" "авг" "сен" "окт" "ноя" "дек")
-    local mon day hhmm
-    mon=$(date -d "@$ts" "+%-m" 2>/dev/null)
-    day=$(date -d "@$ts" "+%-d" 2>/dev/null)
-    hhmm=$(date -d "@$ts" "+%H:%M" 2>/dev/null)
-    if [ "$(date +%Y%m%d)" = "$(date -d "@$ts" +%Y%m%d 2>/dev/null)" ]; then
-        printf "%s" "$hhmm"
+    local ts=$1 fmt='+%Y%m%d %d %m %H:%M' out ymd day mon hhmm
+    REPLY=""
+    # GNU date takes -d @epoch, BSD/macOS date takes -r epoch.
+    out=$(date -d "@$ts" "$fmt" 2>/dev/null || date -r "$ts" "$fmt" 2>/dev/null) || return 0
+    read -r ymd day mon hhmm <<<"$out"
+    if [ "$ymd" = "$(date +%Y%m%d)" ]; then
+        REPLY=$hhmm
     else
-        printf "%s %s, %s" "$day" "${ru_months[$mon]}" "$hhmm"
+        REPLY="$((10#$day)) ${RU_MONTHS[$((10#$mon))]}, $hhmm"
     fi
 }
 
-# Render one usage row: label, block bar with dynamic color, percentage, reset time
-render_usage_line() {
-    local label="$1" pct="$2" reset_ts="$3"
-    local filled empty i fb="" eb="" reset_str fill_color empty_color pct_color
-    filled=$(printf "%.0f" "$(echo "$pct * 20 / 100" | bc -l 2>/dev/null || echo 0)")
-    [ "$filled" -gt 20 ] 2>/dev/null && filled=20
-    [ "$filled" -lt 0 ]  2>/dev/null && filled=0
-    empty=$(( 20 - filled ))
-    # Color by usage level: green < 50%, yellow < 80%, red >= 80%
-    local pct_int=${pct%%.*}
-    if [ "${pct_int:-0}" -ge 80 ] 2>/dev/null; then
-        fill_color="\e[31m"
-    elif [ "${pct_int:-0}" -ge 50 ] 2>/dev/null; then
-        fill_color="\e[33m"
-    else
-        fill_color="\e[32m"
-    fi
-    local empty_color="\e[2;37m" pct_color="\e[2;37m"
-    for ((i=0; i<filled; i++)); do fb="${fb}\xe2\x94\x81"; done   # ━ U+2501 HEAVY HORIZONTAL
-    for ((i=0; i<empty;  i++)); do eb="${eb}\xe2\x94\x80"; done   # ─ U+2500 LIGHT HORIZONTAL
-    reset_str=$(fmt_reset "$reset_ts")
-    local pct_disp
-    pct_disp=$(printf "%.0f" "$pct" 2>/dev/null || echo "$pct")
-    printf "${C_LABEL}%-8s${C_RESET}${fill_color}${fb}${empty_color}${eb}${C_RESET} ${pct_color}%s%%${C_RESET}  ${C_GRAY}%s${C_RESET}" \
-        "$label" "$pct_disp" "$reset_str"
+# --- input ------------------------------------------------------------------
+
+# Every field is optional: Claude Code omits or nulls most of them before the
+# first API response. jq rounds the numbers so the rest is integer-only bash.
+read_input() {
+    cwd="" model="" effort=""
+    ctx_pct="" ctx_used="" ctx_size=""
+    five_pct="" five_reset="" week_pct="" week_reset=""
+
+    local assignments
+    assignments=$(jq -r '
+        def int: if type == "number" then round else "" end;
+        def str: if type == "string" then . else "" end;
+        (.context_window // {}) as $ctx
+        | (.rate_limits // {}) as $rl
+        | @sh "cwd=\(.workspace.current_dir // .cwd | str)",
+          @sh "model=\(.model.display_name | str)",
+          @sh "effort=\(.effort.level | str)",
+          @sh "ctx_pct=\($ctx.used_percentage | int)",
+          @sh "ctx_used=\($ctx.total_input_tokens | int)",
+          @sh "ctx_size=\($ctx.context_window_size | int)",
+          @sh "five_pct=\($rl.five_hour.used_percentage | int)",
+          @sh "five_reset=\($rl.five_hour.resets_at | int)",
+          @sh "week_pct=\($rl.seven_day.used_percentage | int)",
+          @sh "week_reset=\($rl.seven_day.resets_at | int)"
+    ' 2>/dev/null) || return 0
+    # Safe: every value is quoted by jq's @sh.
+    eval "$assignments"
 }
 
-# Line 1: directory + git block
-line1="$(printf "${C_CYAN}")${short_cwd}$(printf "${C_RESET}")"
-if [ -n "$git_branch" ]; then
-    # Branch color: red if conflicts, yellow if dirty, green if clean
-    b_color="$C_GREEN"
-    if [ "$git_staged" -gt 0 ] || [ "$git_modified" -gt 0 ]; then b_color="\e[1;33m"; fi
-    if [ "$git_conflicted" -gt 0 ]; then b_color="\e[1;31m"; fi
-    git_block="$(printf "${b_color}")${git_branch}$(printf "${C_RESET}")"
-    # Working tree status — show [clean] stub when nothing changed
-    git_dirty=""
-    [ "$git_conflicted" -gt 0 ] && git_dirty="${git_dirty} $(printf '\e[1;31m')!${git_conflicted}$(printf "${C_RESET}")"
-    [ "$git_staged"     -gt 0 ] && git_dirty="${git_dirty} $(printf '\e[32m')+${git_staged}$(printf "${C_RESET}")"
-    [ "$git_modified"   -gt 0 ] && git_dirty="${git_dirty} $(printf '\e[33m')~${git_modified}$(printf "${C_RESET}")"
-    [ "$git_untracked"  -gt 0 ] && git_dirty="${git_dirty} $(printf "${C_GRAY}")?${git_untracked}$(printf "${C_RESET}")"
-    if [ -n "$git_dirty" ]; then
-        git_block="${git_block}${git_dirty}"
-    else
-        git_block="${git_block} $(printf "${C_GRAY}")[clean]$(printf "${C_RESET}")"
+# --- git --------------------------------------------------------------------
+
+read_git() {
+    git_branch="" git_subject="" git_age=""
+    git_staged=0 git_modified=0 git_untracked=0 git_conflicted=0
+    git_ahead=0 git_behind=0 git_stash=0
+
+    [ -d "$cwd" ] || return 0
+
+    # --no-optional-locks: never contend for index.lock with Claude's own git
+    # commands running in the same repository.
+    local status
+    status=$(git --no-optional-locks -C "$cwd" status --porcelain=v2 --branch --show-stash 2>/dev/null) || return 0
+
+    local line oid="" xy
+    while IFS= read -r line; do
+        case $line in
+            "# branch.oid "*) oid=${line#\# branch.oid } ;;
+            "# branch.head "*) git_branch=${line#\# branch.head } ;;
+            "# branch.ab "*)
+                line=${line#\# branch.ab +}
+                git_ahead=${line%% *}
+                git_behind=${line##*-}
+                ;;
+            "# stash "*) git_stash=${line#\# stash } ;;
+            "u "*) git_conflicted=$((git_conflicted + 1)) ;;
+            "? "*) git_untracked=$((git_untracked + 1)) ;;
+            "1 "* | "2 "*)
+                xy=${line:2:2}
+                [ "${xy:0:1}" != "." ] && git_staged=$((git_staged + 1))
+                [ "${xy:1:1}" != "." ] && git_modified=$((git_modified + 1))
+                ;;
+        esac
+    done <<<"$status"
+
+    [ "$git_branch" = "(detached)" ] && git_branch=${oid:0:7}
+
+    local log
+    log=$(git --no-optional-locks -C "$cwd" log -1 --format='%cr%x09%s' 2>/dev/null) || return 0
+    git_age=${log%%$'\t'*}
+    git_subject=${log#*$'\t'}
+    if [ "${#git_subject}" -gt "$SUBJECT_MAX" ]; then
+        git_subject="${git_subject:0:$SUBJECT_MAX}…"
     fi
-    # Ahead/behind remote
-    [ "$git_ahead"  -gt 0 ] && git_block="${git_block} $(printf '\e[1;36m')↑${git_ahead}$(printf "${C_RESET}")"
-    [ "$git_behind" -gt 0 ] && git_block="${git_block} $(printf '\e[1;31m')↓${git_behind}$(printf "${C_RESET}")"
-    # Stash
-    [ "$git_stash"  -gt 0 ] && git_block="${git_block} $(printf "${C_GRAY}")≡${git_stash}$(printf "${C_RESET}")"
-    [ -n "$git_last_commit" ] && git_block="${git_block}$(printf "${SEP}")$(printf "${C_GRAY}")${git_last_commit} · ${git_last_commit_time}$(printf "${C_RESET}")"
-    line1="${line1}$(printf "${SEP}")${git_block}"
-else
-    line1="${line1}$(printf "${SEP}")$(printf "${C_GRAY}")[no git]$(printf "${C_RESET}")"
-fi
+}
 
-# Line 2: model + context bar
-effort_label=""
-[ -n "$effort" ] && effort_label=" $(printf "${C_MAGENTA}")(${effort})$(printf "${C_RESET}")"
-line2="$(printf "${C_MAGENTA}")${model} (${ctx_size})$(printf "${C_RESET}")${effort_label}"
-if [ -n "$bar_str" ]; then
-    filled_blocks=$(echo "$bar_str" | sed 's/filled:\(.*\):empty:.*/\1/')
-    empty_blocks=$(echo "$bar_str"  | sed 's/.*:empty:\(.*\):pct:.*/\1/')
-    pct_val=$(echo "$bar_str"       | sed 's/.*:pct:\(.*\)/\1/')
-    ctx_pct_int=${used_pct%%.*}
-    ctx_fill_color="\e[32m"
-    [ "${ctx_pct_int:-0}" -ge 80 ] 2>/dev/null && ctx_fill_color="\e[31m"
-    [ "${ctx_pct_int:-0}" -ge 50 ] 2>/dev/null && [ "${ctx_pct_int:-0}" -lt 80 ] 2>/dev/null && ctx_fill_color="\e[33m"
-    colored_bar="$(printf "${ctx_fill_color}${filled_blocks}${C_BAR_EMPTY}${empty_blocks}${C_RESET}")"
-    token_counts=""
-    if [ -n "$used_tokens" ] && [ -n "$ctx_window" ]; then
-        used_k=$(printf "%.0f" "$(echo "$used_tokens / 1000" | bc -l 2>/dev/null || echo 0)")
-        total_k=$(printf "%.0f" "$(echo "$ctx_window / 1000" | bc -l 2>/dev/null || echo 0)")
-        token_counts=" (${used_k}K / ${total_k}K)"
+# --- rendering --------------------------------------------------------------
+
+render_location() {
+    local dir=${cwd:-?}
+    if [ -n "${HOME:-}" ]; then
+        case $dir in
+            "$HOME") dir="~" ;;
+            "$HOME"/*) dir="~${dir#"$HOME"}" ;;
+        esac
     fi
-    line2="${line2}$(printf "${SEP}")$(printf "${C_GRAY}")Ctx$(printf "${C_RESET}") ${colored_bar}$(printf " ${C_BAR_PCT}${pct_val}%%${token_counts}${C_RESET}")"
-fi
+    local out="${C_DIR}${dir}${C_RESET}${SEP}"
 
-# Lines 3–4: rate limit rows
-line3=""
-[ -n "$five_pct" ]   && line3="$(render_usage_line "Current" "$five_pct"   "$five_reset")"
-[ -n "$seven_pct" ]  && line3="${line3}\n$(render_usage_line "Weekly"  "$seven_pct"  "$seven_reset")"
-[ -n "$sonnet_pct" ] && line3="${line3}\n$(render_usage_line "Sonnet"  "$sonnet_pct" "$sonnet_reset")"
+    if [ -z "$git_branch" ]; then
+        REPLY="${out}${C_DIM}[no git]${C_RESET}"
+        return
+    fi
 
-out="${line1}\n${line2}"
-[ -n "$line3" ] && out="${out}\n${line3}"
+    local color=$C_GREEN_B
+    [ $((git_staged + git_modified)) -gt 0 ] && color=$C_YELLOW_B
+    [ "$git_conflicted" -gt 0 ] && color=$C_RED_B
+    out="${out}${color}${git_branch}${C_RESET}"
 
-printf "%b" "$out"
+    local tree=""
+    [ "$git_conflicted" -gt 0 ] && tree="${tree} ${C_RED_B}!${git_conflicted}${C_RESET}"
+    [ "$git_staged" -gt 0 ] && tree="${tree} ${C_GREEN}+${git_staged}${C_RESET}"
+    [ "$git_modified" -gt 0 ] && tree="${tree} ${C_YELLOW}~${git_modified}${C_RESET}"
+    [ "$git_untracked" -gt 0 ] && tree="${tree} ${C_DIM}?${git_untracked}${C_RESET}"
+    out="${out}${tree:- ${C_DIM}[clean]${C_RESET}}"
+
+    [ "$git_ahead" -gt 0 ] && out="${out} ${C_CYAN_B}↑${git_ahead}${C_RESET}"
+    [ "$git_behind" -gt 0 ] && out="${out} ${C_RED_B}↓${git_behind}${C_RESET}"
+    [ "$git_stash" -gt 0 ] && out="${out} ${C_DIM}≡${git_stash}${C_RESET}"
+    [ -n "$git_subject" ] && out="${out}${SEP}${C_DIM}${git_subject} · ${git_age}${C_RESET}"
+    REPLY=$out
+}
+
+render_model() {
+    local out="${C_MODEL}${model:-?}"
+    if [ -n "$ctx_size" ]; then
+        fmt_tokens "$ctx_size"
+        out="${out} (${REPLY})"
+    fi
+    [ -n "$effort" ] && out="${out} (${effort})"
+    out="${out}${C_RESET}"
+
+    if [ -n "$ctx_pct" ]; then
+        bar "$ctx_pct"
+        out="${out}${SEP}${C_DIM}Ctx${C_RESET} ${REPLY} ${C_TEXT}${ctx_pct}%"
+        if [ -n "$ctx_used" ] && [ -n "$ctx_size" ]; then
+            fmt_tokens "$ctx_used"
+            out="${out} (${REPLY} / "
+            fmt_tokens "$ctx_size"
+            out="${out}${REPLY})"
+        fi
+        out="${out}${C_RESET}"
+    fi
+    REPLY=$out
+}
+
+# render_limit <label> <percent> <reset epoch>
+render_limit() {
+    local label=$1 pct=$2 reset=$3 out
+    bar "$pct"
+    printf -v out '%s%-8s%s%s %s%s%%%s' "$C_DIM" "$label" "$C_RESET" "$REPLY" "$C_DIM" "$pct" "$C_RESET"
+    if [ -n "$reset" ]; then
+        fmt_reset "$reset"
+        [ -n "$REPLY" ] && out="${out}  ${C_DIM}${REPLY}${C_RESET}"
+    fi
+    REPLY=$out
+}
+
+# --- main -------------------------------------------------------------------
+
+main() {
+    case ${1:-} in
+        -v | --version)
+            echo "claude-statusline $VERSION"
+            return 0
+            ;;
+    esac
+
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "claude-statusline: jq не найден"
+        return 0
+    fi
+
+    read_input
+    read_git
+
+    render_location
+    printf '%s\n' "$REPLY"
+    render_model
+    printf '%s\n' "$REPLY"
+    if [ -n "$five_pct" ]; then
+        render_limit "Current" "$five_pct" "$five_reset"
+        printf '%s\n' "$REPLY"
+    fi
+    if [ -n "$week_pct" ]; then
+        render_limit "Weekly" "$week_pct" "$week_reset"
+        printf '%s\n' "$REPLY"
+    fi
+}
+
+main "$@"
