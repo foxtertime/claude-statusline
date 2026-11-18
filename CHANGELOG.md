@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-11-19
+
 
 ### Добавлено
 - Установщик: установка без клонирования из релиза с проверкой `SHA256SUMS`; `--set`, `--unset`, `--refresh` и `--padding` для настроек; `--check` для диагностики. `STATUSLINE_PADDING` выставляется автоматически по `statusLine.padding`; `--uninstall` убирает и опции ([#23](https://github.com/foxtertime/claude-statusline/issues/23)).
@@ -86,7 +88,8 @@
 - Установщик `install.sh`: копирует скрипт в `~/.claude/statusline.sh`, прописывает `statusLine` в `settings.json` с бэкапом; `git` — опциональная зависимость.
 - Флаг `--version` / `-v` у скрипта.
 
-[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/foxtertime/claude-statusline/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/foxtertime/claude-statusline/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/foxtertime/claude-statusline/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/foxtertime/claude-statusline/compare/v1.0.0...v1.1.0
