@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-11-18
+
 ### Добавлено
 - Строка `Spend` — лимит расходов за шлюзом Claude apps (`rate_limits.spend_limit`), с суммами в долларах, если шлюз их сообщает.
 - Поддержка `NO_COLOR`.
@@ -38,5 +40,6 @@
 - Установщик `install.sh`: копирует скрипт в `~/.claude/statusline.sh`, прописывает `statusLine` в `settings.json` с бэкапом; `git` — опциональная зависимость.
 - Флаг `--version` / `-v` у скрипта.
 
-[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/foxtertime/claude-statusline/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/foxtertime/claude-statusline/releases/tag/v1.0.0
