@@ -21,7 +21,8 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 export TZ=UTC NO_COLOR=1
 unset CLAUDE_CONFIG_DIR COLUMNS
 unset STATUSLINE_LANG STATUSLINE_BAR_WIDTH STATUSLINE_WARN STATUSLINE_CRIT STATUSLINE_HIDE
-unset STATUSLINE_RESET
+unset STATUSLINE_RESET STATUSLINE_GIT_CACHE
+export XDG_CACHE_HOME="$TMP/cache"
 mkdir -p "$HOME"
 
 passed=0 failed=0 current=""
@@ -398,6 +399,44 @@ new_repo subject 'Длинная тема коммита на русском я�
 contains "$(render "$(in_dir "$REPO")")" "│ Длинная тема коммита на русском языке, к… · "
 new_repo escapes 'fix \n 100%s \033[31m'
 contains "$(render "$(in_dir "$REPO")")" '│ fix \n 100%s \033[31m · '
+
+# --- кэш git ----------------------------------------------------------------
+
+new_repo cached
+# cached <session_id> [каталог] — строка 1 при включённом кэше
+cached() {
+    line 1 "$(STATUSLINE_GIT_CACHE=60 STATUSLINE_HIDE=commit render "{\"session_id\":\"$1\",\"workspace\":{\"current_dir\":\"${2:-$REPO}\"}}")"
+}
+entry="$XDG_CACHE_HOME/claude-statusline/git-s1"
+
+t "кэш git: выключен по умолчанию"
+render "{\"session_id\":\"s1\",\"workspace\":{\"current_dir\":\"$REPO\"}}" >/dev/null
+if [ -e "$entry" ]; then fail "кэш создан без STATUSLINE_GIT_CACHE"; else ok; fi
+
+t "кэш git: повторный запуск берёт состояние из кэша"
+equals "$(cached s1)" "$REPO │ main [clean]"
+echo new >"$REPO/untracked"
+equals "$(cached s1)" "$REPO │ main [clean]"
+
+t "кэш git: другая сессия, другой каталог, выключенный кэш — свежие данные"
+equals "$(cached s2)" "$REPO │ main ?1"
+equals "$(cached s1 "$TMP/plain")" "$TMP/plain │ [no git]"
+contains "$(render "{\"session_id\":\"s1\",\"workspace\":{\"current_dir\":\"$REPO\"}}")" "main ?1"
+
+t "кэш git: запись устаревает по TTL"
+equals "$(cached s1)" "$REPO │ main ?1"
+echo newer >"$REPO/untracked2"
+equals "$(cached s1)" "$REPO │ main ?1"
+sed -i.orig "1s/.*/$(($(date +%s) - 61))/" "$entry"
+equals "$(cached s1)" "$REPO │ main ?2"
+
+t "кэш git: повреждённая запись и небезопасный session_id игнорируются"
+echo garbage >"$entry"
+equals "$(cached s1)" "$REPO │ main ?2"
+printf '%s\n' "$(date +%s)" "$REPO" main x 0 0 0 0 0 0 age subject >"$entry"
+equals "$(cached s1)" "$REPO │ main ?2"
+equals "$(cached '../../evil')" "$REPO │ main ?2"
+if [ -e "$TMP/evil" ] || [ -e "$XDG_CACHE_HOME/evil" ]; then fail "запись вне каталога кэша"; else ok; fi
 
 # --- установщик -------------------------------------------------------------
 
