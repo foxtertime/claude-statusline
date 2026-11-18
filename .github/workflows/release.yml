@@ -3,20 +3,38 @@ name: Release
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  # Ручной запуск для уже существующего тега: публикует релиз, если его нет,
+  # иначе обновляет его описание из CHANGELOG.md.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Существующий тег, например v1.2.3
+        required: true
 
 permissions:
   contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate the tag name
+        run: |
+          if ! [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$TAG' is not a vX.Y.Z tag"
+            exit 1
+          fi
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
       - name: Check that the tag matches VERSION
         run: |
           version=$(./statusline.sh --version | cut -d' ' -f2)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match VERSION $version"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match VERSION $version"
             exit 1
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
@@ -29,7 +47,12 @@ jobs:
             on { print }
           ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
           test -s "$RUNNER_TEMP/notes.md"
-      - name: Create GitHub release
+      - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
