@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Проверяет заголовок коммита на соответствие Conventional Commits.
+# Включить: make hooks
+set -euo pipefail
+
+subject=$(head -n 1 "$1")
+
+types='feat|fix|docs|refactor|perf|test|build|ci|chore|revert'
+pattern="^(${types})(\([a-z0-9-]+\))?!?: [^ ].*[^. ]$"
+
+case $subject in
+    "Merge "* | "Revert "* | "fixup! "* | "squash! "*) exit 0 ;;
+esac
+
+if ! [[ $subject =~ $pattern ]]; then
+    cat >&2 <<MSG
+Заголовок коммита не соответствует Conventional Commits:
+
+    $subject
+
+Ожидается: <type>(<scope>): <описание>   — scope необязателен, без точки в конце
+Типы:      ${types//|/, }
+Пример:    fix(statusline): handle detached HEAD
+MSG
+    exit 1
+fi
+
+if [ "${#subject}" -gt 72 ]; then
+    echo "Заголовок коммита длиннее 72 символов (${#subject})." >&2
+    exit 1
+fi
