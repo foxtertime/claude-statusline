@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-11-19
+
+### Добавлено
+- Имя ветки — кликабельная ссылка на ветку на GitHub или на репозиторий на другом хостинге ([#11](https://github.com/foxtertime/claude-statusline/issues/11)).
+- `STATUSLINE_GIT_CACHE` — кэш состояния git на заданное число секунд для очень больших репозиториев; по умолчанию выключен ([#10](https://github.com/foxtertime/claude-statusline/issues/10)).
+- Индикаторы режимов: `fast`, имя агента, режим vim, имя сессии и имя git worktree ([#9](https://github.com/foxtertime/claude-statusline/issues/9)).
+- Состояние кэша промпта в строке 2: доля чтений из кэша и время, когда он остынет ([#8](https://github.com/foxtertime/claude-statusline/issues/8)).
+- `STATUSLINE_RESET=relative` — время до сброса лимита («через 2 ч 10 мин») вместо времени на часах ([#7](https://github.com/foxtertime/claude-statusline/issues/7)).
+- Сегмент сессии в строке 2: оценка стоимости, длительность, добавленные и удалённые строки ([#6](https://github.com/foxtertime/claude-statusline/issues/6)).
+- Открытый pull request текущей ветки рядом с веткой: номер, состояние ревью и ссылка; merge request GitLab — как `!123` ([#5](https://github.com/foxtertime/claude-statusline/issues/5)).
+- Строки подстраиваются под ширину терминала (`COLUMNS`): строка 1 по шагам теряет тему коммита, начало пути и хвост имени ветки, строка 2 — сегменты с конца ([#3](https://github.com/foxtertime/claude-statusline/issues/3)).
+- Настройка переменными окружения: `STATUSLINE_LANG` (язык дат), `STATUSLINE_BAR_WIDTH`, `STATUSLINE_WARN` / `STATUSLINE_CRIT` (пороги цвета) и `STATUSLINE_HIDE` (скрытие сегментов) ([#4](https://github.com/foxtertime/claude-statusline/issues/4)).
+
+### Исправлено
+- Управляющие символы в текстовых полях (имя модели, сессии, агента) больше не ломают строки.
+
+### Изменено
+- **Язык дат теперь выбирается по локали**: русский при русской локали, иначе английский. Если локаль системы не русская, а даты нужны на русском, задайте `STATUSLINE_LANG=ru` ([#12](https://github.com/foxtertime/claude-statusline/issues/12)).
+
 ## [1.1.1] — 2026-11-18
 
 Сам статуслайн и установщик не изменились.
@@ -49,7 +68,8 @@
 - Установщик `install.sh`: копирует скрипт в `~/.claude/statusline.sh`, прописывает `statusLine` в `settings.json` с бэкапом; `git` — опциональная зависимость.
 - Флаг `--version` / `-v` у скрипта.
 
-[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/foxtertime/claude-statusline/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/foxtertime/claude-statusline/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/foxtertime/claude-statusline/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/foxtertime/claude-statusline/releases/tag/v1.0.0

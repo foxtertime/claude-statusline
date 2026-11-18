@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 Status line for Claude Code: a single bash script that reads the session JSON
-on stdin and prints 2–5 lines (directory + git, model + context bar, usage
-limits). User-facing docs, messages and code comments in `install.sh` and
+on stdin and prints 2–5 lines (directory + git + pull request; model, context
+bar, session cost, prompt cache and mode indicators; usage limits). User-facing docs, messages and code comments in `install.sh` and
 `tests/` are in Russian; commit messages are in English.
 
 ## Commands
@@ -34,13 +34,19 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 
 ## Rules for statusline.sh
 
-- **It runs after every assistant message, so forks are the cost.** Keep it to
-  one `jq` and two `git` processes. Helpers return through `REPLY` instead of
+- **It runs after every assistant message, so forks are the cost.** The
+  baseline is one `jq` and two `git` processes, plus two `date` calls per
+  absolute reset time shown. Helpers return through `REPLY` instead of
   `$(...)`. Do not add a subprocess per field.
+- The git cache (`STATUSLINE_GIT_CACHE`) is read with `read` and validated,
+  never evaluated; a new git field must be added to `reset_git`,
+  `load_git_cache` and `save_git_cache` together, in the same order.
 - **Every input field is optional.** Fields are absent or `null` before the
   first API response; the script must exit 0 and print something sensible for
   `{}` and for invalid JSON. Add new fields to the jq program in `read_input`
-  through the `int` / `str` filters.
+  through the `int` / `str` / `text` filters: `text` for anything displayed
+  as free text (it replaces control characters), `str` for values that are
+  only compared or validated before use.
 - **Check the schema before touching fields:**
   https://code.claude.com/docs/en/statusline#available-data. It changes;
   `rate_limits.seven_day_sonnet` was removed here because it is not in it.
@@ -50,7 +56,15 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 - **Portability:** bash 3.2 (macOS system bash) and both GNU and BSD
   userlands. No associative arrays, `${var,,}`, `mapfile`, `printf '%(…)T'`,
   or GNU-only flags without a BSD fallback.
+- **Lines must fit `COLUMNS`.** Line 1 degrades through the levels in
+  `render_location`; line 2 is the `SEGMENTS` array, most important first,
+  and `join_fit` drops from the end. Add a new line-2 item as a segment in
+  priority order, never by appending to an existing one.
 - All color variables must be cleared in the `NO_COLOR` block.
+- **Options are `STATUSLINE_*` environment variables**, validated in the
+  configuration block; an invalid value silently keeps the default. A new
+  segment gets a name for `STATUSLINE_HIDE` (checked with `shown <name>`) and
+  a row in the README tables. Defaults must reproduce the previous output.
 
 ## Workflow
 
@@ -72,6 +86,11 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 - **SemVer.** `VERSION` in `statusline.sh` is the single source of truth and a
   test checks it against the newest `CHANGELOG.md` section. Only bump it on a
   release branch.
+- **Wait for CI before closing an issue.** The macOS job runs the system
+  bash 3.2, which cannot be reproduced on Linux; push the feature branch as a
+  PR to `develop` and merge only when it is green. In tests, build JSON with
+  `printf` and a single-quoted format — `\"` inside `"$(...)"` is parsed
+  differently by bash 3.2.
 - A behavior change needs a test in `tests/run.sh` and a line under
   `[Unreleased]` in `CHANGELOG.md` (Russian, Keep a Changelog format).
 - Do not push, tag, or publish a release without being asked.
