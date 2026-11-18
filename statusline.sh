@@ -289,10 +289,70 @@ set_now() {
     [ -n "$NOW" ] || NOW=${EPOCHSECONDS:-$(date +%s)}
 }
 
+# --- demo -------------------------------------------------------------------
+
+# demo_json — sample input that exercises every segment, for --demo.
+# Timestamps are relative to now so the reset times stay meaningful.
+demo_json() {
+    set_now
+    printf '%s' "{
+        \"session_id\": \"demo\",
+        \"session_name\": \"refactor auth middleware\",
+        \"model\": {\"id\": \"claude-opus-5-5\", \"display_name\": \"Opus 5.5\"},
+        \"workspace\": {
+            \"current_dir\": \"${HOME:-/home/user}/projects/app\",
+            \"git_worktree\": \"auth\",
+            \"repo\": {\"host\": \"github.com\", \"owner\": \"example\", \"name\": \"app\"}
+        },
+        \"effort\": {\"level\": \"high\"},
+        \"fast_mode\": true,
+        \"agent\": {\"name\": \"reviewer\"},
+        \"vim\": {\"mode\": \"NORMAL\"},
+        \"context_window\": {
+            \"used_percentage\": 62,
+            \"total_input_tokens\": 620000,
+            \"context_window_size\": 1000000
+        },
+        \"cost\": {
+            \"total_cost_usd\": 3.42,
+            \"total_duration_ms\": 2580000,
+            \"total_lines_added\": 156,
+            \"total_lines_removed\": 23
+        },
+        \"prompt_cache\": {
+            \"caching_observed\": true, \"warm\": true,
+            \"hit_ratio\": 0.91, \"expires_at\": $((NOW + 2400))
+        },
+        \"pr\": {
+            \"number\": 42, \"review_state\": \"approved\",
+            \"url\": \"https://github.com/example/app/pull/42\"
+        },
+        \"rate_limits\": {
+            \"five_hour\": {\"used_percentage\": 34, \"resets_at\": $((NOW + 7800))},
+            \"seven_day\": {\"used_percentage\": 71, \"resets_at\": $((NOW + 4 * 86400))},
+            \"spend_limit\": {
+                \"used_percentage\": 86, \"resets_at\": $((NOW + 12 * 86400)),
+                \"used_usd\": 430, \"limit_usd\": 500
+            }
+        }
+    }"
+}
+
+# demo_git — sample git state, so --demo never touches a real repository
+demo_git() {
+    git_branch="feature/auth"
+    git_staged=2 git_modified=1 git_untracked=3 git_conflicted=0
+    git_ahead=1 git_behind=0 git_stash=1
+    shown commit || return 0
+    git_subject="fix(auth): refresh expired tokens"
+    if [ "$LANG_CODE" = ru ]; then git_age="2 часа назад"; else git_age="2 hours ago"; fi
+}
+
 # --- input ------------------------------------------------------------------
 
 # Every field is optional: Claude Code omits or nulls most of them before the
 # first API response. jq rounds the numbers so the rest is integer-only bash.
+# read_input [json] — parse the given JSON, or stdin when none is given
 read_input() {
     cwd="" model="" effort=""
     ctx_pct="" ctx_used="" ctx_size=""
@@ -305,8 +365,9 @@ read_input() {
     session_id=""
     repo_host="" repo_owner="" repo_name=""
 
-    local assignments
-    assignments=$(jq -r '
+    local assignments program
+    # shellcheck disable=SC2016  # $ctx, $rl, $spend are jq variables
+    program='
         def int: if type == "number" then round else "" end;
         def str: if type == "string" then . else "" end;
         # Free text shown as is: control characters would break the layout.
@@ -358,7 +419,12 @@ read_input() {
               else "cold" end)",
           @sh "cache_hit=\(.prompt_cache.hit_ratio | if type == "number" then . * 100 | round else "" end)",
           @sh "cache_expires=\(.prompt_cache.expires_at | int)"
-    ' 2>/dev/null) || return 0
+    '
+    if [ $# -gt 0 ]; then
+        assignments=$(printf '%s' "$1" | jq -r "$program" 2>/dev/null) || return 0
+    else
+        assignments=$(jq -r "$program" 2>/dev/null) || return 0
+    fi
     # Safe: every value is quoted by jq's @sh.
     eval "$assignments"
 }
@@ -708,11 +774,13 @@ render_limit() {
 # --- main -------------------------------------------------------------------
 
 main() {
+    local demo=0
     case ${1:-} in
         -v | --version)
             echo "claude-statusline $VERSION"
             return 0
             ;;
+        --demo) demo=1 ;;
     esac
 
     if ! command -v jq >/dev/null 2>&1; then
@@ -724,8 +792,14 @@ main() {
         return 0
     fi
 
-    read_input
-    read_git
+    if [ "$demo" -eq 1 ]; then
+        read_input "$(demo_json)"
+        reset_git
+        shown git && demo_git
+    else
+        read_input
+        read_git
+    fi
 
     fit_location
     printf '%s\n' "$REPLY"

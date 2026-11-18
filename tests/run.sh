@@ -32,6 +32,8 @@ export XDG_CACHE_HOME="$TMP/cache"
 mkdir -p "$HOME"
 
 passed=0 failed=0 current=""
+esc=$'\033'
+tilde='~' # буквальная тильда: в выводе она не раскрывается
 
 t() { current=$1; }
 
@@ -87,6 +89,35 @@ equals "$("$BASH" "$SCRIPT" -v)" "claude-statusline $version"
 released=$(sed -n 's/^## \[\([0-9][^]]*\)\].*/\1/p' "$ROOT/CHANGELOG.md" | head -1)
 equals "$released" "$version"
 
+# --- демо -------------------------------------------------------------------
+
+demo() { "$BASH" "$SCRIPT" --demo; }
+
+t "демо: показывает каждый сегмент и каждую строку лимитов"
+out=$(demo)
+equals "$?" "0"
+for part in "$tilde/projects/app" "feature/auth" "+2" "~1" "?3" "↑1" "≡1" "wt:auth" \
+    "#42 approved" "fix(auth): refresh expired tokens" "Opus 5.5 (1M) (high)" "fast" \
+    "@reviewer" "Ctx " "62% (620K / 1M)" "43 мин" "+156 −23" "Cache 91%" "NORMAL" \
+    "refactor auth middleware" "Current " "Weekly " "Spend " "\$430 / \$500"; do
+    contains "$out" "$part"
+done
+equals "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "5"
+
+t "демо: учитывает настройки и не читает stdin"
+out=$(STATUSLINE_HIDE=commit,limits,session demo </dev/null)
+lacks "$out" "fix(auth)"
+lacks "$out" "Current"
+lacks "$out" "refactor auth"
+contains "$(STATUSLINE_LANG=en demo)" "43m"
+contains "$(STATUSLINE_RESET=relative demo)" "через 2 ч 10 мин"
+equals "$(STATUSLINE_HIDE=git demo | sed -n 1p)" "$tilde/projects/app"
+lacks "$(demo)" "$esc"
+
+t "демо: ширина терминала"
+out=$(COLUMNS=60 demo)
+equals "$(line 1 "$out")" "…/app │ feature/auth +2 ~1 ?3 ↑1 ≡1 wt:auth #42 approved"
+
 # --- устойчивость к входу ---------------------------------------------------
 
 t "пустой объект"
@@ -115,7 +146,6 @@ contains "$out" "/current │"
 # --- директория -------------------------------------------------------------
 
 t "домашний каталог сокращается до ~"
-tilde='~' # буквальная тильда: в выводе она не раскрывается
 contains "$(render "$(in_dir "$HOME")")" "$tilde │"
 contains "$(render "$(in_dir "$HOME/work")")" "$tilde/work │"
 contains "$(render "$(in_dir "${HOME}2/work")")" "${HOME}2/work │"
@@ -135,7 +165,6 @@ out=$(render '{"context_window":{"used_percentage":0}}')
 contains "$out" "Ctx ──────────────────── 0%"
 
 t "цвет шкалы зависит от уровня"
-esc=$'\033'
 colored() { printf '{"context_window":{"used_percentage":%s}}' "$1" | NO_COLOR='' "$BASH" "$SCRIPT"; }
 contains "$(colored 49)" "${esc}[32m━"
 contains "$(colored 50)" "${esc}[33m━"
