@@ -20,7 +20,9 @@ export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 export TZ=UTC NO_COLOR=1
 unset CLAUDE_CONFIG_DIR COLUMNS
-unset STATUSLINE_LANG STATUSLINE_BAR_WIDTH STATUSLINE_WARN STATUSLINE_CRIT STATUSLINE_HIDE
+# Язык задаётся явно: по умолчанию он зависит от локали машины.
+export STATUSLINE_LANG=ru
+unset STATUSLINE_BAR_WIDTH STATUSLINE_WARN STATUSLINE_CRIT STATUSLINE_HIDE
 unset STATUSLINE_RESET STATUSLINE_GIT_CACHE
 export XDG_CACHE_HOME="$TMP/cache"
 mkdir -p "$HOME"
@@ -186,7 +188,28 @@ full='{"model":{"display_name":"M"},"effort":{"level":"high"},"context_window":{
 t "настройки: STATUSLINE_LANG"
 contains "$(STATUSLINE_LANG=en render "$full")" "20%  Mar 10, 19:30"
 contains "$(STATUSLINE_LANG=ru render "$full")" "20%  10 мар, 19:30"
-contains "$(STATUSLINE_LANG=xx render "$full")" "20%  10 мар, 19:30"
+
+t "настройки: язык по умолчанию берётся из локали"
+# with_locale <VAR=значение>... — запуск без STATUSLINE_LANG и с заданной локалью
+with_locale() {
+    printf '%s' "$full" |
+        env -u STATUSLINE_LANG -u LC_ALL -u LC_TIME -u LANG "$@" "$BASH" "$SCRIPT" 2>/dev/null
+}
+ru_date="20%  10 мар, 19:30" en_date="20%  Mar 10, 19:30"
+contains "$(with_locale LANG=ru_RU.UTF-8)" "$ru_date"
+contains "$(with_locale LANG=en_US.UTF-8)" "$en_date"
+contains "$(with_locale LANG=de_DE.UTF-8)" "$en_date"
+contains "$(with_locale)" "$en_date"
+contains "$(with_locale LANG=C)" "$en_date"
+contains "$(with_locale LANG=en_US.UTF-8 LC_TIME=ru_RU.UTF-8)" "$ru_date"
+contains "$(with_locale LANG=ru_RU.UTF-8 LC_TIME=en_GB.UTF-8)" "$en_date"
+contains "$(with_locale LC_ALL=en_US.UTF-8 LC_TIME=ru_RU.UTF-8)" "$en_date"
+contains "$(with_locale LANG=rw_RW.UTF-8)" "$en_date"
+
+t "настройки: STATUSLINE_LANG важнее локали, некорректное значение игнорируется"
+contains "$(with_locale LANG=en_US.UTF-8 STATUSLINE_LANG=ru)" "$ru_date"
+contains "$(with_locale LANG=ru_RU.UTF-8 STATUSLINE_LANG=en)" "$en_date"
+contains "$(with_locale LANG=ru_RU.UTF-8 STATUSLINE_LANG=xx)" "$ru_date"
 
 t "настройки: STATUSLINE_BAR_WIDTH"
 equals "$(line 2 "$(STATUSLINE_BAR_WIDTH=10 render "$full")")" "M (200K) (high) │ Ctx ━━━━━───── 50% (100K / 200K)"
