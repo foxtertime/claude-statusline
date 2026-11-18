@@ -18,10 +18,13 @@
 #   STATUSLINE_HIDE       comma-separated segments to hide
 
 set -u
+shopt -s extglob # visible_len strips escape sequences with *(...)
 
 VERSION="1.1.1"
 
 SUBJECT_MAX=40
+BRANCH_MIN=8   # never truncate a branch name below this many characters
+WIDTH_MARGIN=4 # columns left free for Claude Code's own padding
 MONTHS_RU=("" "янв" "фев" "мар" "апр" "май" "июн" "июл" "авг" "сен" "окт" "ноя" "дек")
 MONTHS_EN=("" "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec")
 
@@ -53,6 +56,12 @@ is_int "${STATUSLINE_CRIT:-}" && CRIT_AT=$STATUSLINE_CRIT
 if [ "$WARN_AT" -gt "$CRIT_AT" ]; then
     WARN_AT=50
     CRIT_AT=80
+fi
+
+# Claude Code exports the terminal size; 0 means "unknown, do not fit".
+MAX_WIDTH=0
+if is_int "${COLUMNS:-}" && [ "$COLUMNS" -ge 20 ]; then
+    MAX_WIDTH=$((COLUMNS - WIDTH_MARGIN))
 fi
 
 # Segments: git commit effort context tokens limits current weekly spend
@@ -100,6 +109,27 @@ repeat() {
     local pad
     printf -v pad '%*s' "$2" ''
     REPLY=${pad// /$1}
+}
+
+# visible_len <string> — length as displayed, without color escapes
+visible_len() {
+    local plain=${1//$ESC\[*([0-9;])m/}
+    REPLY=${#plain}
+}
+
+# short_path <path> <keep> — "…/proj/app": the last <keep> components
+short_path() {
+    local head=$1 tail="" i
+    for ((i = 0; i < $2; i++)); do
+        [ "${head%/*}" != "$head" ] || break
+        tail="/${head##*/}${tail}"
+        head=${head%/*}
+    done
+    if [ -z "$head" ] || [ "$head" = "~" ]; then
+        REPLY=$1
+    else
+        REPLY="…${tail}"
+    fi
 }
 
 # level_color <percent> — green below WARN_AT, yellow below CRIT_AT, then red
@@ -246,13 +276,29 @@ read_git() {
 
 # --- rendering --------------------------------------------------------------
 
+# render_location <level> [overflow]
+# Level 0 is the full line; each next level gives up something to save width:
+#   1  drop the last commit
+#   2  shorten the path to its last two components
+#   3  shorten the path to its last component
+#   4  truncate the branch name by <overflow> columns
 render_location() {
-    local dir=${cwd:-?}
+    local level=$1 overflow=${2:-0}
+    local dir=${cwd:-?} branch=$git_branch
     if [ -n "${HOME:-}" ]; then
         case $dir in
             "$HOME") dir="~" ;;
             "$HOME"/*) dir="~${dir#"$HOME"}" ;;
         esac
+    fi
+    if [ "$level" -ge 2 ]; then
+        short_path "$dir" $((level >= 3 ? 1 : 2))
+        dir=$REPLY
+    fi
+    if [ "$level" -ge 4 ]; then
+        local keep=$((${#branch} - overflow - 1))
+        [ "$keep" -lt "$BRANCH_MIN" ] && keep=$BRANCH_MIN
+        [ "$keep" -lt "${#branch}" ] && branch="${branch:0:keep}…"
     fi
     local out="${C_DIR}${dir}${C_RESET}"
     if ! shown git; then
@@ -269,7 +315,7 @@ render_location() {
     local color=$C_GREEN_B
     [ $((git_staged + git_modified)) -gt 0 ] && color=$C_YELLOW_B
     [ "$git_conflicted" -gt 0 ] && color=$C_RED_B
-    out="${out}${color}${git_branch}${C_RESET}"
+    out="${out}${color}${branch}${C_RESET}"
 
     local tree=""
     [ "$git_conflicted" -gt 0 ] && tree="${tree} ${C_RED_B}!${git_conflicted}${C_RESET}"
@@ -281,10 +327,45 @@ render_location() {
     [ "$git_ahead" -gt 0 ] && out="${out} ${C_CYAN_B}↑${git_ahead}${C_RESET}"
     [ "$git_behind" -gt 0 ] && out="${out} ${C_RED_B}↓${git_behind}${C_RESET}"
     [ "$git_stash" -gt 0 ] && out="${out} ${C_DIM}≡${git_stash}${C_RESET}"
-    [ -n "$git_subject" ] && out="${out}${SEP}${C_DIM}${git_subject} · ${git_age}${C_RESET}"
+    [ -n "$git_subject" ] && [ "$level" -lt 1 ] &&
+        out="${out}${SEP}${C_DIM}${git_subject} · ${git_age}${C_RESET}"
     REPLY=$out
 }
 
+# fit_location — the fullest line 1 that fits MAX_WIDTH
+fit_location() {
+    local level line overflow=0
+    for level in 0 1 2 3 4; do
+        render_location "$level" "$overflow"
+        [ "$MAX_WIDTH" -eq 0 ] && return
+        line=$REPLY
+        visible_len "$line"
+        overflow=$((REPLY - MAX_WIDTH))
+        [ "$overflow" -le 0 ] && break
+    done
+    REPLY=$line
+}
+
+# join_fit — join SEGMENTS with the separator, dropping segments from the end
+# until the line fits MAX_WIDTH. The first segment always stays.
+join_fit() {
+    local count=${#SEGMENTS[@]} line i
+    while :; do
+        line=${SEGMENTS[0]}
+        for ((i = 1; i < count; i++)); do
+            line="${line}${SEP}${SEGMENTS[i]}"
+        done
+        if [ "$MAX_WIDTH" -eq 0 ] || [ "$count" -le 1 ]; then
+            break
+        fi
+        visible_len "$line"
+        [ "$REPLY" -le "$MAX_WIDTH" ] && break
+        count=$((count - 1))
+    done
+    REPLY=$line
+}
+
+# render_model — fills SEGMENTS for line 2, most important first
 render_model() {
     local out="${C_MODEL}${model:-?}"
     if [ -n "$ctx_size" ]; then
@@ -293,19 +374,19 @@ render_model() {
     fi
     [ -n "$effort" ] && shown effort && out="${out} (${effort})"
     out="${out}${C_RESET}"
+    SEGMENTS=("$out")
 
     if [ -n "$ctx_pct" ] && shown context; then
         bar "$ctx_pct"
-        out="${out}${SEP}${C_DIM}Ctx${C_RESET} ${REPLY} ${C_TEXT}${ctx_pct}%"
+        out="${C_DIM}Ctx${C_RESET} ${REPLY} ${C_TEXT}${ctx_pct}%"
         if [ -n "$ctx_used" ] && [ -n "$ctx_size" ] && shown tokens; then
             fmt_tokens "$ctx_used"
             out="${out} (${REPLY} / "
             fmt_tokens "$ctx_size"
             out="${out}${REPLY})"
         fi
-        out="${out}${C_RESET}"
+        SEGMENTS+=("${out}${C_RESET}")
     fi
-    REPLY=$out
 }
 
 # render_limit <label> <percent> <reset epoch> [note]
@@ -343,9 +424,10 @@ main() {
     read_input
     read_git
 
-    render_location
+    fit_location
     printf '%s\n' "$REPLY"
     render_model
+    join_fit
     printf '%s\n' "$REPLY"
     shown limits || return 0
     if [ -n "$five_pct" ] && shown current; then

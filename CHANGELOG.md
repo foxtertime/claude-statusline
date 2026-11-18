@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Добавлено
+- Строки подстраиваются под ширину терминала (`COLUMNS`): строка 1 по шагам теряет тему коммита, начало пути и хвост имени ветки, строка 2 — сегменты с конца ([#3](https://github.com/foxtertime/claude-statusline/issues/3)).
 - Настройка переменными окружения: `STATUSLINE_LANG` (язык дат), `STATUSLINE_BAR_WIDTH`, `STATUSLINE_WARN` / `STATUSLINE_CRIT` (пороги цвета) и `STATUSLINE_HIDE` (скрытие сегментов) ([#4](https://github.com/foxtertime/claude-statusline/issues/4)).
 
 ## [1.1.1] — 2026-11-18

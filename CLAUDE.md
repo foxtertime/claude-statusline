@@ -50,6 +50,10 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
 - **Portability:** bash 3.2 (macOS system bash) and both GNU and BSD
   userlands. No associative arrays, `${var,,}`, `mapfile`, `printf '%(…)T'`,
   or GNU-only flags without a BSD fallback.
+- **Lines must fit `COLUMNS`.** Line 1 degrades through the levels in
+  `render_location`; line 2 is the `SEGMENTS` array, most important first,
+  and `join_fit` drops from the end. Add a new line-2 item as a segment in
+  priority order, never by appending to an existing one.
 - All color variables must be cleared in the `NO_COLOR` block.
 - **Options are `STATUSLINE_*` environment variables**, validated in the
   configuration block; an invalid value silently keeps the default. A new
