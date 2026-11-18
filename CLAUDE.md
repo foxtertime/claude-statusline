@@ -64,8 +64,9 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   degrades through the levels in `render_location`; line 2 is the `SEGMENTS`
   array, most important first, and `join_fit` drops from the end, then
   shortens the model segment through `HEAD_FORMS`; limit rows go through
-  `fit_limit`. Add a new line-2 item as a segment in priority order, never by
-  appending to an existing one. Widths come from `visible_len`, which counts
+  `fit_limit`. A new line-2 item is a segment: add its name to
+  `LINE2_SEGMENTS` (the default order) and a branch to `render_segment`, so
+  `STATUSLINE_LAYOUT` can place it; never append to an existing segment. Widths come from `visible_len`, which counts
   wide characters as two columns. Benchmark with `COLUMNS` set — that is the
   real path. No extglob or other backtracking patterns on long strings:
   `${s//$ESC\[*([0-9;])m/}` once cost 25 ms per call (#31); strip known

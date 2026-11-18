@@ -6,6 +6,7 @@
 
 
 ### Добавлено
+- `STATUSLINE_LAYOUT`: порядок сегментов строки 2, перенос части сегментов на отдельную строку через `/` и однострочный режим `compact` ([#20](https://github.com/foxtertime/claude-statusline/issues/20)).
 - `STATUSLINE_PADDING` — передаёт скрипту `statusLine.padding`, чтобы строки с отступом не обрезались ([#21](https://github.com/foxtertime/claude-statusline/issues/21)).
 - Темы и цвета: `STATUSLINE_THEME=light` для светлого фона и `STATUSLINE_COLOR_<РОЛЬ>` для отдельных ролей; `STATUSLINE_ASCII=1` — режим без псевдографики ([#26](https://github.com/foxtertime/claude-statusline/issues/26)).
 - Флаг `--demo`: статуслайн на встроенном примере данных со всеми сегментами — чтобы увидеть действие настроек сразу ([#24](https://github.com/foxtertime/claude-statusline/issues/24)).
@@ -16,6 +17,7 @@
 - Время сброса лимитов и остывания кэша форматируется без запуска `date` на bash 4.2+: отрисовка с тремя строками лимитов и кэшем ускорилась примерно с 39 до 10 мс. На bash 3.2 (macOS) по-прежнему используется `date` ([#25](https://github.com/foxtertime/claude-statusline/issues/25)).
 
 ### Исправлено
+- На узком терминале путь без `/` (например, `?`, когда директория неизвестна) превращался в одно многоточие.
 - Управляющие символы в теме коммита и в пути больше не попадают в терминал: раньше коммит с escape-последовательностями мог очистить экран или сменить заголовок окна ([#34](https://github.com/foxtertime/claude-statusline/issues/34)).
 - Подгонка под ширину замедляла каждую отрисовку до 55–120 мс (Claude Code всегда передаёт `COLUMNS`); теперь 12–15 мс ([#31](https://github.com/foxtertime/claude-statusline/issues/31)).
 
