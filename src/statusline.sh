@@ -1127,29 +1127,30 @@ render_cost() {
     REPLY=$out
 }
 
-# render_limit <level> <label> <percent> <reset epoch> [note] [bar width]
-# Level 0 is the full row; level 1 drops the note, level 2 the reset time.
+# render_limit <level> <label> <percent> <reset text> [note] [bar width]
 render_limit() {
     local level=$1 label=$2 pct=$3 reset=$4 note=${5:-} width=${6:-$BAR_WIDTH} out pad
     # Padded by hand: printf counts bytes, and the labels can be Cyrillic.
     printf -v pad '%*s' $((LIMIT_LABEL_WIDTH - ${#label})) ''
     bar "$pct" "$width"
     out="${C_DIM}${label}${pad}${C_RESET}${REPLY} ${C_DIM}${pct}%${C_RESET}"
-    if [ -n "$reset" ] && [ "$level" -lt 2 ]; then
-        fmt_reset "$reset"
-        [ -n "$REPLY" ] && out="${out}  ${C_DIM}${REPLY}${C_RESET}"
-    fi
+    [ -n "$reset" ] && [ "$level" -lt 2 ] && out="${out}  ${C_DIM}${reset}${C_RESET}"
     [ -n "$note" ] && [ "$level" -lt 1 ] && out="${out}  ${C_DIM}${note}${C_RESET}"
     REPLY=$out
 }
 
 # fit_limit <label> <percent> <reset epoch> [note] — the fullest limit row
 # that fits MAX_WIDTH: drop the note, then the reset time, then shorten the
-# bar down to 5 cells.
+# bar down to 5 cells. The reset time is formatted once: on bash 3.2 that
+# costs a date process.
 fit_limit() {
-    local level line width
+    local level line width reset=""
+    if [ -n "$3" ]; then
+        fmt_reset "$3"
+        reset=$REPLY
+    fi
     for level in 0 1 2; do
-        render_limit "$level" "$@"
+        render_limit "$level" "$1" "$2" "$reset" "${4:-}"
         [ "$MAX_WIDTH" -eq 0 ] && return
         line=$REPLY
         visible_len "$line"
@@ -1160,7 +1161,7 @@ fit_limit() {
     done
     width=$((BAR_WIDTH - (REPLY - MAX_WIDTH)))
     [ "$width" -lt 5 ] && width=5
-    render_limit 2 "$1" "$2" "$3" "${4:-}" "$width"
+    render_limit 2 "$1" "$2" "$reset" "${4:-}" "$width"
 }
 
 # --- main -------------------------------------------------------------------

@@ -271,6 +271,22 @@ for zone in UTC Asia/Tokyo America/Los_Angeles; do
 done
 equals "$(line 3 "$(_STATUSLINE_FORCE_DATE=1 render '{"rate_limits":{"seven_day":{"used_percentage":5,"resets_at":1741635000}}}')")" "Weekly  ━─────────────────── 5%  Mar 10, 19:30"
 
+t "лимиты: на узком терминале date не вызывается повторно"
+# Обёртка над date считает вызовы; узкая строка лимита перебирает ступени,
+# но время сброса форматирует один раз.
+mkdir -p "$TMP/shim"
+# shellcheck disable=SC2016  # $DATE_LOG и $@ раскрывает сама обёртка
+printf '#!/bin/sh\necho x >>"$DATE_LOG"\nexec %s "$@"\n' "$(command -v date)" >"$TMP/shim/date"
+chmod +x "$TMP/shim/date"
+date_calls() {
+    : >"$TMP/date.log"
+    COLUMNS=$1 DATE_LOG="$TMP/date.log" PATH="$TMP/shim:$PATH" _STATUSLINE_FORCE_DATE=1 "$BASH" "$SCRIPT" --demo >/dev/null
+    wc -l <"$TMP/date.log" | tr -d ' '
+}
+wide_calls=$(date_calls 200)
+equals "$(date_calls 50)" "$wide_calls"
+equals "$(date_calls 30)" "$wide_calls"
+
 t "лимиты: seven_day_sonnet больше не выводится"
 lacks "$(render '{"rate_limits":{"seven_day_sonnet":{"used_percentage":8}}}')" "Sonnet"
 
