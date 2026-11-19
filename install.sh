@@ -26,9 +26,20 @@ SOURCE="$(cd "$(dirname "$0")" && pwd)/statusline.sh"
 
 # Опции, которые принимает --set. STATUSLINE_PADDING не входит: его
 # установщик выставляет сам по statusLine.padding (см. --padding).
-KNOWN_OPTIONS=" LANG BAR_WIDTH WARN CRIT HIDE RESET GIT_CACHE THEME ASCII LAYOUT
+KNOWN_OPTIONS="LANG BAR_WIDTH WARN CRIT HIDE RESET GIT_CACHE THEME ASCII LAYOUT
     COLOR_DIR COLOR_MUTED COLOR_MODEL COLOR_TEXT COLOR_OK COLOR_WARN COLOR_CRIT
-    COLOR_ACCENT "
+    COLOR_ACCENT"
+
+# known_option <KEY> — KEY есть в KNOWN_OPTIONS. Имя сравнивается целиком,
+# поэтому перевод строки в списке и пробел в имени ничего не ломают.
+known_option() {
+    local name
+    case $1 in STATUSLINE_*) ;; *) return 1 ;; esac
+    for name in $KNOWN_OPTIONS; do
+        [ "STATUSLINE_$name" = "$1" ] && return 0
+    done
+    return 1
+}
 
 # В settings.json пишем ~/.claude/..., пока каталог стандартный: такой файл
 # можно переносить между машинами.
@@ -129,11 +140,7 @@ add_set() {
     [ "$key" != "$1" ] || die "--set: ожидается STATUSLINE_X=значение, получено '$1'"
     [ "$key" = STATUSLINE_PADDING ] &&
         die "STATUSLINE_PADDING выставляется сам по statusLine.padding — используйте --padding"
-    case $KNOWN_OPTIONS in
-        *" ${key#STATUSLINE_} "*) ;;
-        *) die "неизвестная опция '$key'; список — в README" ;;
-    esac
-    case $key in STATUSLINE_*) ;; *) die "неизвестная опция '$key'; список — в README" ;; esac
+    known_option "$key" || die "неизвестная опция '$key'; список — в README"
     SETS=$(jq -n --argjson o "$SETS" --arg k "$key" --arg v "$value" '$o + {($k): $v}')
 }
 
@@ -339,10 +346,11 @@ check_settings() {
     local key value
     while IFS=$'\t' read -r key value; do
         [ -n "$key" ] || continue
-        case $KNOWN_OPTIONS in
-            *" ${key#STATUSLINE_} "*) report ok "опция $key=$value" ;;
-            *) [ "$key" = STATUSLINE_PADDING ] || report warn "неизвестная опция $key — статуслайн её не читает" ;;
-        esac
+        if known_option "$key"; then
+            report ok "опция $key=$value"
+        elif [ "$key" != STATUSLINE_PADDING ]; then
+            report warn "неизвестная опция $key — статуслайн её не читает"
+        fi
     done < <(jq -r '(.env // {}) | to_entries[] | select(.key | startswith("STATUSLINE_")) | "\(.key)\t\(.value)"' "$SETTINGS")
 
     local padding env_padding

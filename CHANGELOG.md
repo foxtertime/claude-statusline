@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Исправлено
+- `install.sh --set` отклонял `STATUSLINE_LAYOUT` и `STATUSLINE_COLOR_CRIT`, а `--check` называл их неизвестными; имя опции с пробелом больше не принимается ([#40](https://github.com/foxtertime/claude-statusline/issues/40)).
+
 ## [1.3.0] — 2026-11-19
 
 
