@@ -645,6 +645,13 @@ read_input() {
             then (. * 100 | round) as $cents
                 | "\($cents / 100 | floor).\($cents % 100 + 100 | tostring | .[1:])"
             else "" end;
+        # Whole dollars without cents ($500), the rest rounded to cents.
+        def usd:
+            if type == "number" and . >= 0 and . < 1e12
+            then (. * 100 | round) as $cents
+                | if $cents % 100 == 0 then "\($cents / 100 | floor)"
+                  else "\($cents / 100 | floor).\($cents % 100 + 100 | tostring | .[1:])" end
+            else "" end;
         (.context_window // {}) as $ctx
         | (.rate_limits // {}) as $rl
         | ($rl.spend_limit // {}) as $spend
@@ -670,9 +677,8 @@ read_input() {
           @sh "spend_pct=\($spend.used_percentage | int)",
           @sh "spend_reset=\($spend.resets_at | int)",
           @sh "spend_usd=\(
-              if $spend.used_usd != null and $spend.limit_usd != null
-              then "$\($spend.used_usd) / $\($spend.limit_usd)"
-              else "" end)",
+              ($spend.used_usd | usd) as $used | ($spend.limit_usd | usd) as $limit
+              | if $used != "" and $limit != "" then "$\($used) / $\($limit)" else "" end)",
           @sh "pr_number=\(.pr.number | int)",
           @sh "pr_url=\(.pr.url | str)",
           @sh "pr_state=\(.pr.review_state | str)",

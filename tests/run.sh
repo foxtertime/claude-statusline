@@ -198,6 +198,15 @@ equals "$(line 3 "$out")" "Spend   ━━━━━━━━━━━━━──
 out=$(render '{"rate_limits":{"spend_limit":{"used_percentage":130}}}')
 equals "$(line 3 "$out")" "Spend   ━━━━━━━━━━━━━━━━━━━━ 130%"
 
+t "лимиты: суммы spend_limit округляются до центов, не-числа отбрасываются"
+spend_usd() { printf '{"rate_limits":{"spend_limit":{"used_percentage":5,"used_usd":%s,"limit_usd":%s}}}' "$1" "$2" | "$BASH" "$SCRIPT" | sed -n 3p; }
+equals "$(spend_usd 0.30000000000000004 500)" "Spend   ━─────────────────── 5%  \$0.30 / \$500"
+equals "$(spend_usd 0 12.5)" "Spend   ━─────────────────── 5%  \$0 / \$12.50"
+out=$(spend_usd '"\u001b]0;pwn\u0007"' 500)
+equals "$out" "Spend   ━─────────────────── 5%"
+lacks "$out" "$esc"
+equals "$(spend_usd -1 500)" "Spend   ━─────────────────── 5%"
+
 t "лимиты: STATUSLINE_RESET=relative — время до сброса"
 # Запас в 30 секунд, чтобы результат не зависел от момента запуска.
 resets_in() { printf '{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%s}}}' "$(($(date +%s) + $1))"; }
