@@ -80,6 +80,9 @@ update_settings() {
         rm -f "$tmp"
         die "$SETTINGS — не валидный JSON, файл не изменён"
     fi
+    # .orig — файл до первого изменения установщиком, не перезаписывается;
+    # .bak — версия перед последним запуском.
+    [ -e "$SETTINGS.orig" ] || cp "$SETTINGS" "$SETTINGS.orig"
     cp "$SETTINGS" "$SETTINGS.bak"
     cat "$tmp" >"$SETTINGS"
     rm -f "$tmp"
@@ -208,7 +211,7 @@ do_install() {
         --argjson sets "$SETS" --argjson unsets "$UNSETS")
     if [ -f "$SETTINGS" ]; then
         update_settings "${args[@]}" "$SETTINGS_FILTER"
-        echo "Обновлён $SETTINGS (бэкап: $SETTINGS.bak)"
+        echo "Обновлён $SETTINGS (бэкап: $SETTINGS.bak, исходный файл: $SETTINGS.orig)"
     else
         jq -n "${args[@]}" "{} | $SETTINGS_FILTER" >"$SETTINGS"
         echo "Создан $SETTINGS"
@@ -235,7 +238,7 @@ do_uninstall() {
             del(.statusLine)
             | if .env then .env |= with_entries(select(.key | startswith("STATUSLINE_") | not)) else . end
             | if .env == {} then del(.env) else . end'
-        echo "Ключ statusLine и опции STATUSLINE_* удалены из $SETTINGS (бэкап: $SETTINGS.bak)"
+        echo "Ключ statusLine и опции STATUSLINE_* удалены из $SETTINGS (бэкап: $SETTINGS.bak, исходный файл: $SETTINGS.orig)"
     fi
     rm -f "$TARGET"
     echo "claude-statusline удалён."

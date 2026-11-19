@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Изменено
+- Установщик сохраняет исходный `settings.json` в `settings.json.orig` при первом изменении и больше его не перезаписывает; `settings.json.bak`, как и раньше, — версия перед последним запуском ([#47](https://github.com/foxtertime/claude-statusline/issues/47)).
+
 ### Исправлено
 - Установщик больше не заменяет `settings.json`, который является символической ссылкой (например, из менеджера dotfiles), обычным файлом и сохраняет его права доступа ([#46](https://github.com/foxtertime/claude-statusline/issues/46)).
 - `install.sh --padding 00` и `--refresh 00` теперь считаются нулём и убирают ключ, как `0`; ведущие нули в числах отбрасываются ([#49](https://github.com/foxtertime/claude-statusline/issues/49)).
