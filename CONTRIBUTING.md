@@ -40,6 +40,8 @@ make fmt     # отформатировать код
 
 Любая работа начинается с issue и попадает в `develop` или `main` только через pull request — это относится и к feature-, и к release-, и к hotfix-веткам.
 
+Для ошибок и предложений есть шаблоны (`.github/ISSUE_TEMPLATE/`): шаблон ошибки просит входной JSON, ширину, опции, ОС, версию bash и вывод `install.sh --check`, шаблон предложения добавляет стандартный чек-лист. Для мелких задач и chore можно открыть пустую issue.
+
 ```bash
 gh issue create --assignee @me               # или найти существующую: gh issue list,
                                              # и взять её: gh issue edit <номер> --add-assignee @me
