@@ -48,6 +48,8 @@ git clone https://github.com/foxtertime/claude-statusline.git
 cd claude-statusline && ./install.sh
 ```
 
+В копии репозитория (её установщик узнаёт по `tests/run.sh`) ставится лежащий рядом `statusline.sh`; вне её скрипт всегда скачивается и сверяется, даже если рядом с установщиком есть другой `statusline.sh`.
+
 Установщик кладёт скрипт в `~/.claude/statusline.sh` и добавляет в `~/.claude/settings.json`:
 
 ```json

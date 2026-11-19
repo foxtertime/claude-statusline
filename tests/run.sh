@@ -870,6 +870,32 @@ if [ -e "$CLAUDE_CONFIG_DIR" ]; then fail "при неверной сумме ч
 out=$(STATUSLINE_RELEASE=main "$BASH" "$standalone/install.sh" 2>&1)
 equals "$?" "1"
 
+t "install: чужой statusline.sh рядом с установщиком не ставится без проверки"
+cp "$SCRIPT" "$release/statusline.sh" # вернуть файл после проверки подмены
+printf '#!/bin/sh\necho "claude-statusline 0.0-stale"\n' >"$standalone/statusline.sh"
+export CLAUDE_CONFIG_DIR="$TMP/stale"
+out=$(STATUSLINE_DOWNLOAD_BASE="file://$release" "$BASH" "$standalone/install.sh" 2>&1)
+equals "$?" "0"
+if cmp -s "$SCRIPT" "$CLAUDE_CONFIG_DIR/statusline.sh"; then ok; else fail "установлен не скачанный файл" "$out"; fi
+lacks "$out" "0.0-stale"
+
+t "install: запуск из каталога настроек"
+cp "$INSTALLER" "$CLAUDE_CONFIG_DIR/install.sh"
+before=$(cat "$CLAUDE_CONFIG_DIR/settings.json")
+out=$(STATUSLINE_DOWNLOAD_BASE="file://$release" "$BASH" "$CLAUDE_CONFIG_DIR/install.sh" 2>&1)
+equals "$?" "0"
+lacks "$out" "same file"
+equals "$(cat "$CLAUDE_CONFIG_DIR/settings.json")" "$before"
+
+t "install: каталог настроек — сама копия репозитория"
+export CLAUDE_CONFIG_DIR="$TMP/repo-as-config"
+mkdir -p "$CLAUDE_CONFIG_DIR/tests"
+cp "$INSTALLER" "$SCRIPT" "$CLAUDE_CONFIG_DIR/" && touch "$CLAUDE_CONFIG_DIR/tests/run.sh"
+out=$("$BASH" "$CLAUDE_CONFIG_DIR/install.sh" 2>&1)
+equals "$?" "1"
+contains "$out" "это и есть установленный скрипт"
+if [ -e "$CLAUDE_CONFIG_DIR/settings.json" ]; then fail "settings.json создан"; else ok; fi
+
 # ----------------------------------------------------------------------------
 
 printf '%d passed, %d failed\n' "$passed" "$failed"
