@@ -882,13 +882,22 @@ render_pr() {
 
 # fit_location — the fullest line 1 that fits MAX_WIDTH
 fit_location() {
-    local level line overflow=0
+    local level line overflow
     for level in 0 1 2 3 4 5 6; do
-        render_location "$level" "$overflow"
+        render_location "$level"
         [ "$MAX_WIDTH" -eq 0 ] && return
         line=$REPLY
         visible_len "$line"
         overflow=$((REPLY - MAX_WIDTH))
+        # The branch is cut by this level's own overflow, measured with the
+        # full branch: an overflow left over from the level before would cut
+        # it by too little once the worktree and the PR are gone.
+        if [ "$overflow" -gt 0 ] && [ "$level" -ge 4 ]; then
+            render_location "$level" "$overflow"
+            line=$REPLY
+            visible_len "$line"
+            overflow=$((REPLY - MAX_WIDTH))
+        fi
         [ "$overflow" -le 0 ] && break
     done
     REPLY=$line

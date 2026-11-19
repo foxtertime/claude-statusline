@@ -6,6 +6,7 @@
 
 ### Исправлено
 - `install.sh --set` отклонял `STATUSLINE_LAYOUT` и `STATUSLINE_COLOR_CRIT`, а `--check` называл их неизвестными; имя опции с пробелом больше не принимается ([#40](https://github.com/foxtertime/claude-statusline/issues/40)).
+- На узком терминале длинное имя ветки снова отрастало, когда из строки 1 убирались worktree и pull request, и строка не помещалась ([#41](https://github.com/foxtertime/claude-statusline/issues/41)).
 
 ## [1.3.0] — 2026-11-19
 
