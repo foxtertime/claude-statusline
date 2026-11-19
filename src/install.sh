@@ -183,7 +183,12 @@ number_arg() {
 # строки с отступом не помещаются.
 # shellcheck disable=SC2016  # $cmd, $sets и т. д. — переменные jq
 SETTINGS_FILTER='
-    .statusLine = ((.statusLine // {}) + {type: "command", command: $cmd})
+    (.statusLine.command // "") as $old
+    # Команду с опциями впереди (STATUSLINE_LANG=en ~/.claude/statusline.sh)
+    # оставляем как есть, чтобы переустановка не стирала эти опции.
+    | (if ($old | type) == "string" and ($old | endswith(" " + $cmd))
+       then $old else $cmd end) as $command
+    | .statusLine = ((.statusLine // {}) + {type: "command", command: $command})
     | if $refresh == "" then .
       elif $refresh == "0" then del(.statusLine.refreshInterval)
       else .statusLine.refreshInterval = ($refresh | tonumber) end
@@ -328,7 +333,7 @@ check_settings() {
     report ok "statusLine.command: $command"
 
     local script=$TARGET
-    if [ "$command" != "$COMMAND" ]; then
+    if [ "$command" != "$COMMAND" ] && [ "${command% "$COMMAND"}" = "$command" ]; then
         report warn "команда отличается от той, что ставит установщик ($COMMAND)"
         # Чужая команда: берём последнее слово и раскрываем ~ сами.
         script=${command##* }
