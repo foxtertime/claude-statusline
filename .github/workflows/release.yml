@@ -30,9 +30,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ env.TAG }}
+      # Scripts live in src/; tags up to v1.3.0 have them in the root, and the
+      # workflow can be re-run for an existing tag.
+      - name: Find the scripts
+        run: |
+          if [ -f src/statusline.sh ]; then dir=src; else dir=.; fi
+          echo "SRC=$dir" >> "$GITHUB_ENV"
       - name: Check that the tag matches VERSION
         run: |
-          version=$(./statusline.sh --version | cut -d' ' -f2)
+          version=$("$SRC/statusline.sh" --version | cut -d' ' -f2)
           if [ "v$version" != "$TAG" ]; then
             echo "::error::tag $TAG does not match VERSION $version"
             exit 1
@@ -57,10 +63,11 @@ jobs:
             gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
           fi
       # install.sh, запущенный без копии репозитория, скачивает statusline.sh
-      # отсюда и сверяет его с SHA256SUMS.
+      # отсюда и сверяет его с SHA256SUMS. Имена файлов в релизе — без src/.
       - name: Attach the scripts and their checksums
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sha256sum statusline.sh install.sh > SHA256SUMS
-          gh release upload "$TAG" statusline.sh install.sh SHA256SUMS --clobber
+          cd "$SRC"
+          sha256sum statusline.sh install.sh > "$RUNNER_TEMP/SHA256SUMS"
+          gh release upload "$TAG" statusline.sh install.sh "$RUNNER_TEMP/SHA256SUMS" --clobber

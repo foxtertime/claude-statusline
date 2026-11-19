@@ -1,4 +1,4 @@
-SHELL_FILES := statusline.sh install.sh tests/run.sh .githooks/commit-msg
+SHELL_FILES := src/statusline.sh src/install.sh tests/run.sh .githooks/commit-msg
 
 .DEFAULT_GOAL := help
 .PHONY: help check lint fmt fmt-check test install uninstall hooks
@@ -21,10 +21,10 @@ test: ## Запустить тесты
 	./tests/run.sh
 
 install: ## Установить статуслайн в Claude Code
-	./install.sh
+	src/install.sh
 
 uninstall: ## Удалить статуслайн
-	./install.sh --uninstall
+	src/install.sh --uninstall
 
 hooks: ## Включить git-хук проверки сообщений коммитов
 	git config core.hooksPath .githooks

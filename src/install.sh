@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Установка, настройка и удаление claude-statusline.
 #
-#   ./install.sh [настройки]      установить или обновить
-#   ./install.sh --check          проверить установку
-#   ./install.sh --uninstall      удалить скрипт и его настройки
+#   install.sh [настройки]        установить или обновить
+#   install.sh --check            проверить установку
+#   install.sh --uninstall        удалить скрипт и его настройки
+#
+# В копии репозитория установщик лежит в src/ (или: make install).
 #
 # Настройки (можно повторять и сочетать):
 #   --set STATUSLINE_X=значение   задать опцию статуслайна
@@ -12,7 +14,7 @@
 #   --padding N                   отступ statusLine.padding (0 — убрать)
 #
 # Каталог настроек берётся из CLAUDE_CONFIG_DIR, по умолчанию ~/.claude.
-# Если рядом с установщиком нет statusline.sh, он скачивается из релиза на
+# Вне копии репозитория statusline.sh скачивается из релиза на
 # GitHub (STATUSLINE_RELEASE=vX.Y.Z, по умолчанию последний) и сверяется с
 # SHA256SUMS того же релиза.
 set -euo pipefail
@@ -23,10 +25,13 @@ CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$DEFAULT_DIR}"
 SETTINGS="$CLAUDE_DIR/settings.json"
 TARGET="$CLAUDE_DIR/statusline.sh"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-# Копия репозитория узнаётся по tests/run.sh: так statusline.sh, случайно
-# оказавшийся рядом со скачанным установщиком, не ставится без проверки.
+# Копия репозитория узнаётся по src/statusline.sh и tests/run.sh: так
+# statusline.sh, случайно оказавшийся рядом со скачанным установщиком, не
+# ставится без проверки.
 SOURCE=""
-[ -f "$HERE/statusline.sh" ] && [ -f "$HERE/tests/run.sh" ] && SOURCE="$HERE/statusline.sh"
+[ -f "$HERE/statusline.sh" ] && [ -f "$HERE/../tests/run.sh" ] && SOURCE="$HERE/statusline.sh"
+# Как запустить установщик снова — для подсказок в сообщениях
+SELF=$0
 
 # Опции, которые принимает --set. STATUSLINE_PADDING не входит: его
 # установщик выставляет сам по statusLine.padding (см. --padding).
@@ -285,7 +290,7 @@ do_check() {
     fi
 
     if [ ! -f "$SETTINGS" ]; then
-        report fail "$SETTINGS не найден — запустите ./install.sh"
+        report fail "$SETTINGS не найден — запустите $SELF"
     elif ! command -v jq >/dev/null 2>&1; then
         :
     elif ! jq empty "$SETTINGS" 2>/dev/null; then
@@ -307,7 +312,7 @@ check_settings() {
     type=$(jq -r '.statusLine.type // ""' "$SETTINGS")
     command=$(jq -r '.statusLine.command // ""' "$SETTINGS")
     if [ -z "$command" ]; then
-        report fail "в $SETTINGS нет statusLine.command — запустите ./install.sh"
+        report fail "в $SETTINGS нет statusLine.command — запустите $SELF"
         return
     fi
     [ "$type" = command ] || report fail "statusLine.type = '$type', ожидается 'command'"
@@ -335,7 +340,7 @@ check_settings() {
         if [ "$installed" = "$available" ]; then
             report ok "установлена версия $installed"
         else
-            report warn "установлена версия $installed, в этой копии репозитория — $available; обновить: ./install.sh"
+            report warn "установлена версия $installed, в этой копии репозитория — $available; обновить: $SELF"
         fi
     else
         report ok "установлена версия $installed"
@@ -362,7 +367,7 @@ check_settings() {
     padding=$(jq -r '.statusLine.padding // 0' "$SETTINGS")
     env_padding=$(jq -r '.env.STATUSLINE_PADDING // "0"' "$SETTINGS")
     if [ "$padding" != "$env_padding" ]; then
-        report warn "statusLine.padding = $padding, а STATUSLINE_PADDING = $env_padding — строки могут обрезаться; исправит ./install.sh"
+        report warn "statusLine.padding = $padding, а STATUSLINE_PADDING = $env_padding — строки могут обрезаться; исправит $SELF"
     fi
 }
 

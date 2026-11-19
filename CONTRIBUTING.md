@@ -12,6 +12,18 @@ make fmt     # отформатировать код
 
 Тесты лежат в `tests/run.sh` и не требуют ничего, кроме bash, jq и git. Любое изменение поведения сопровождается тестом.
 
+## Структура
+
+| Путь | Что там |
+| --- | --- |
+| `src/statusline.sh` | Сам статуслайн — единственный файл, который ставится пользователю |
+| `src/install.sh` | Установщик: установка, настройки, `--check`, `--uninstall` |
+| `tests/run.sh` | Тесты обоих скриптов |
+| `.github/workflows/` | CI (`ci.yml`) и выпуск релиза (`release.yml`) |
+| `.githooks/commit-msg` | Проверка Conventional Commits |
+
+В релиз скрипты прикладываются без каталога: `statusline.sh`, `install.sh`, `SHA256SUMS`.
+
 ## Ветки — Gitflow
 
 | Ветка | Назначение | Откуда | Куда вливается |
@@ -70,7 +82,7 @@ gh issue close <номер> --comment "Сделано в #<номер PR>"
 - **MINOR** — новая функциональность (`feat`)
 - **PATCH** — только исправления (`fix`, `perf`)
 
-Версия хранится в одном месте — в переменной `VERSION` в `statusline.sh`. Тест проверяет, что она совпадает с последним разделом `CHANGELOG.md`.
+Версия хранится в одном месте — в переменной `VERSION` в `src/statusline.sh`. Тест проверяет, что она совпадает с последним разделом `CHANGELOG.md`.
 
 ## Changelog
 
@@ -82,7 +94,7 @@ gh issue close <номер> --comment "Сделано в #<номер PR>"
 git checkout develop && git pull
 git checkout -b release/X.Y.Z
 
-# 1. VERSION="X.Y.Z" в statusline.sh
+# 1. VERSION="X.Y.Z" в src/statusline.sh
 # 2. в CHANGELOG.md: [Unreleased] → [X.Y.Z] — ГГГГ-ММ-ДД, обновить ссылки внизу
 make check
 git commit -am "chore(release): X.Y.Z"
