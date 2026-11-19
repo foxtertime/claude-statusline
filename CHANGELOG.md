@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Исправлено
+- Установщик больше не заменяет `settings.json`, который является символической ссылкой (например, из менеджера dotfiles), обычным файлом и сохраняет его права доступа ([#46](https://github.com/foxtertime/claude-statusline/issues/46)).
 - `install.sh --padding 00` и `--refresh 00` теперь считаются нулём и убирают ключ, как `0`; ведущие нули в числах отбрасываются ([#49](https://github.com/foxtertime/claude-statusline/issues/49)).
 - `--demo` больше не показывает `?` и пустые сегменты, когда в `HOME` есть кавычка или обратная косая черта ([#53](https://github.com/foxtertime/claude-statusline/issues/53)).
 - Имена в `STATUSLINE_LAYOUT` больше не раскрываются как шаблоны файлов: `*` или `?` в раскладке не зависят от содержимого текущего каталога ([#52](https://github.com/foxtertime/claude-statusline/issues/52)).

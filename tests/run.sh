@@ -845,6 +845,23 @@ t "install: неизвестный флаг"
 out=$(install --bogus)
 equals "$?" "2"
 
+t "install: settings.json-ссылка остаётся ссылкой, права сохраняются"
+export CLAUDE_CONFIG_DIR="$TMP/linked"
+mkdir -p "$CLAUDE_CONFIG_DIR" "$TMP/dotfiles"
+echo '{"theme":"dark"}' >"$TMP/dotfiles/settings.json"
+chmod 644 "$TMP/dotfiles/settings.json"
+ln -s "$TMP/dotfiles/settings.json" "$CLAUDE_CONFIG_DIR/settings.json"
+out=$(install --set STATUSLINE_LANG=ru)
+equals "$?" "0"
+if [ -L "$CLAUDE_CONFIG_DIR/settings.json" ]; then ok; else fail "ссылка заменена обычным файлом"; fi
+equals "$(jq -r '.theme + " " + .env.STATUSLINE_LANG' "$TMP/dotfiles/settings.json")" "dark ru"
+equals "$(find "$TMP/dotfiles/settings.json" -perm 644)" "$TMP/dotfiles/settings.json"
+install --uninstall >/dev/null
+if [ -L "$CLAUDE_CONFIG_DIR/settings.json" ]; then ok; else fail "--uninstall заменил ссылку"; fi
+equals "$(jq -c . "$TMP/dotfiles/settings.json")" '{"theme":"dark"}'
+leftovers=("$CLAUDE_CONFIG_DIR"/settings.json.*)
+equals "${leftovers[*]}" "$CLAUDE_CONFIG_DIR/settings.json.bak"
+
 t "install: --set, --refresh и --padding пишут настройки"
 export CLAUDE_CONFIG_DIR="$TMP/opts"
 settings="$CLAUDE_CONFIG_DIR/settings.json"
