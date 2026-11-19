@@ -1,4 +1,4 @@
-SHELL_FILES := src/statusline.sh src/install.sh tests/run.sh .githooks/commit-msg
+SHELL_FILES := src/statusline.sh src/install.sh tests/run.sh tests/lib.sh tests/statusline.sh tests/install.sh .githooks/commit-msg
 
 .DEFAULT_GOAL := help
 .PHONY: help check lint fmt fmt-check test install uninstall hooks

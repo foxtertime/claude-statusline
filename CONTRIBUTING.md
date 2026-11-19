@@ -10,7 +10,7 @@ make check   # shellcheck + shfmt + тесты; должно проходить 
 make fmt     # отформатировать код
 ```
 
-Тесты лежат в `tests/run.sh` и не требуют ничего, кроме bash, jq и git. Любое изменение поведения сопровождается тестом.
+Тесты лежат в `tests/` и не требуют ничего, кроме bash, jq и git: `./tests/run.sh` запускает все, `./tests/statusline.sh` и `./tests/install.sh` — по отдельности. Любое изменение поведения сопровождается тестом.
 
 ## Структура
 
@@ -18,7 +18,9 @@ make fmt     # отформатировать код
 | --- | --- |
 | `src/statusline.sh` | Сам статуслайн — единственный файл, который ставится пользователю |
 | `src/install.sh` | Установщик: установка, настройки, `--check`, `--uninstall` |
-| `tests/run.sh` | Тесты обоих скриптов |
+| `tests/run.sh` | Запуск всех тестов с общим итогом |
+| `tests/statusline.sh`, `tests/install.sh` | Тесты статуслайна и установщика |
+| `tests/lib.sh` | Окружение тестов и проверки (`equals`, `contains`, `render`…) |
 | `.github/workflows/` | CI (`ci.yml`) и выпуск релиза (`release.yml`) |
 | `.githooks/commit-msg` | Проверка Conventional Commits |
 

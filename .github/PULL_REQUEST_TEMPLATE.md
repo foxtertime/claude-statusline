@@ -5,6 +5,6 @@
 ## Проверка
 
 - [ ] `make check` проходит
-- [ ] Поведение покрыто тестом в `tests/run.sh`
+- [ ] Поведение покрыто тестом в `tests/` (`statusline.sh` или `install.sh`)
 - [ ] Изменение описано в разделе `[Unreleased]` файла `CHANGELOG.md`
 - [ ] Заголовки коммитов соответствуют Conventional Commits
