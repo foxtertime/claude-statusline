@@ -207,6 +207,14 @@ Claude Code перерисовывает статуслайн после соо�
 echo '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage":25,"context_window_size":200000}}' | src/statusline.sh
 ```
 
+Что передаёт Claude Code — например, для отчёта об ошибке: временно поставьте в `settings.json` команду, которая сохраняет вход перед отрисовкой, и верните прежнюю после следующего ответа.
+
+```json
+"statusLine": { "type": "command", "command": "tee /tmp/statusline-input.json | ~/.claude/statusline.sh" }
+```
+
+Диагностика установки — `install.sh --check`.
+
 ## Разработка
 
 ```bash

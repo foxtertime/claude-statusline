@@ -1,0 +1,56 @@
+name: Ошибка
+description: Статуслайн или установщик ведут себя не так, как ожидалось
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Чтобы ошибку можно было воспроизвести, нужны входные данные и окружение. Пути, имена веток и темы коммитов можно заменить — главное, чтобы ошибка оставалась.
+  - type: textarea
+    id: what
+    attributes:
+      label: Что произошло и что ожидалось
+      placeholder: При 80 колонках строка 2 обрезается многоточием, ожидалось, что она поместится.
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Входной JSON
+      description: Что Claude Code передал скрипту, или `--demo`, если ошибка видна на демо-данных. Как его получить — в README, раздел «Проверка».
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: width
+    attributes:
+      label: COLUMNS и statusLine.padding
+      placeholder: COLUMNS=80, padding 0
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Опции STATUSLINE_*
+      description: Блок `env` из `settings.json` и опции в самой команде, если есть.
+      render: json
+  - type: input
+    id: os
+    attributes:
+      label: ОС и терминал
+      placeholder: macOS 15, iTerm2 3.5
+    validations:
+      required: true
+  - type: input
+    id: bash
+    attributes:
+      label: bash --version
+      description: Первая строка вывода `bash --version`; на macOS — того bash, которым запускается скрипт.
+      placeholder: GNU bash, version 3.2.57(1)-release
+    validations:
+      required: true
+  - type: textarea
+    id: check
+    attributes:
+      label: Вывод install.sh --check
+      render: text
