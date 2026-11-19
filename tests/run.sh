@@ -121,6 +121,18 @@ for home in "$TMP/a\"b" "$TMP/a\\b"; do
     contains "$out" "Opus 5.5"
 done
 
+t "демо: время читается один раз, даже если часы идут"
+# Обёртка над date: каждое «date +%s» на секунду позже предыдущего.
+mkdir -p "$TMP/clock"
+echo 1000000000 >"$TMP/clock/now"
+# shellcheck disable=SC2016  # переменные раскрывает сама обёртка
+printf '#!/bin/sh\nif [ "$1" = +%%s ]; then n=$(cat "%s"); echo $((n + 1)) >"%s"; echo "$n"; else exec %s "$@"; fi\n' \
+    "$TMP/clock/now" "$TMP/clock/now" "$(command -v date)" >"$TMP/clock/date"
+chmod +x "$TMP/clock/date"
+out=$(PATH="$TMP/clock:$PATH" _STATUSLINE_FORCE_DATE=1 STATUSLINE_RESET=relative demo)
+contains "$out" "in 2h 10m"
+contains "$out" "Cache 91% · in 40m"
+
 t "демо: ширина терминала"
 out=$(COLUMNS=60 demo)
 equals "$(line 1 "$out")" "…/app │ feature/auth +2 ~1 ?3 ↑1 ≡1 wt:auth #42 approved"

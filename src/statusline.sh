@@ -582,10 +582,9 @@ format_time() {
 NOW="" TODAY=""
 set_now() {
     [ -n "$NOW" ] && return 0
-    if [ -n "${EPOCHSECONDS:-}" ]; then
-        NOW=$EPOCHSECONDS
-    elif [ "$BUILTIN_TIME" -eq 1 ]; then
-        printf -v NOW '%(%s)T' -1
+    if [ "$BUILTIN_TIME" -eq 1 ]; then
+        NOW=${EPOCHSECONDS:-}
+        [ -n "$NOW" ] || printf -v NOW '%(%s)T' -1
     else
         NOW=$(date +%s)
     fi
@@ -1312,6 +1311,9 @@ main() {
     fi
 
     if [ "$demo" -eq 1 ]; then
+        # demo_json runs in a subshell: without this its NOW would be lost and
+        # read again later, a second off when the clock ticks in between.
+        set_now
         read_input "$(demo_json)"
         reset_git
         shown git && demo_git
