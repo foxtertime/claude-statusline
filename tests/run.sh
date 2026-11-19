@@ -441,22 +441,22 @@ contains "$(NO_COLOR='' render "$(with_repo github.com o r)")" "$(osc https://gi
 
 t "ссылки: директория ведёт на file:// с полным путём"
 host=$(printf '%s' "$HOSTNAME" | LC_ALL=C sed 's/[^A-Za-z0-9.-]//g')
-[ "$host" = "$HOSTNAME" ] || host=""
-contains "$(NO_COLOR='' render "$(in_dir "$REPO")")" "$(osc "file://$host$REPO" "$REPO")"
+[ "${host}" = "$HOSTNAME" ] || host=""
+contains "$(NO_COLOR='' render "$(in_dir "${REPO}")")" "$(osc "file://${host}${REPO}" "${REPO}")"
 # на узком экране путь сокращён, а ссылка — на полный путь
-contains "$(NO_COLOR='' COLUMNS=30 render "$(in_dir "$REPO")")" "]8;;file://$host$REPO$bel…/"
-mkdir -p "$TMP/a b#c%d/проект"
-contains "$(NO_COLOR='' render "$(in_dir "$TMP/a b#c%d/проект")")" "]8;;file://$host$TMP/a%20b%23c%25d/%D0%BF%D1%80%D0%BE%D0%B5%D0%BA%D1%82$bel"
-equals "$(line 1 "$(render "$(in_dir "$TMP/a b#c%d/проект")")")" "$TMP/a b#c%d/проект │ [no git]"
+contains "$(NO_COLOR='' COLUMNS=30 render "$(in_dir "${REPO}")")" "]8;;file://${host}${REPO}${bel}…/"
+mkdir -p "${TMP}/a b#c%d/проект"
+contains "$(NO_COLOR='' render "$(in_dir "${TMP}/a b#c%d/проект")")" "]8;;file://${host}${TMP}/a%20b%23c%25d/%D0%BF%D1%80%D0%BE%D0%B5%D0%BA%D1%82${bel}"
+equals "$(line 1 "$(render "$(in_dir "${TMP}/a b#c%d/проект")")")" "${TMP}/a b#c%d/проект │ [no git]"
 
 t "ссылки: директория — управляющие символы кодируются, без ссылки, если путь не абсолютный"
 out=$(NO_COLOR='' render '{"workspace":{"current_dir":"/tmp/x\u001b]0;pwn\u0007y"}}')
-contains "$out" "]8;;file://$host/tmp/x%1B%5D0%3Bpwn%07y$bel"
+contains "$out" "]8;;file://${host}/tmp/x%1B%5D0%3Bpwn%07y${bel}"
 lacks "$out" "${esc}]0;pwn"
 lacks "$(NO_COLOR='' render '{}')" "${esc}]8"
 lacks "$(NO_COLOR='' render '{"workspace":{"current_dir":"relative"}}')" "${esc}]8"
-lacks "$(NO_COLOR='' STATUSLINE_HIDE=links render "$(in_dir "$REPO")")" "${esc}]8"
-lacks "$(render "$(in_dir "$REPO")")" "${esc}]8"
+lacks "$(NO_COLOR='' STATUSLINE_HIDE=links render "$(in_dir "${REPO}")")" "${esc}]8"
+lacks "$(render "$(in_dir "${REPO}")")" "${esc}]8"
 
 # --- pull request -----------------------------------------------------------
 
