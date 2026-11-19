@@ -11,8 +11,8 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-SCRIPT="$ROOT/statusline.sh"
-INSTALLER="$ROOT/install.sh"
+SCRIPT="$ROOT/src/statusline.sh"
+INSTALLER="$ROOT/src/install.sh"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -826,6 +826,7 @@ out=$(install --check)
 equals "$?" "0"
 contains "$out" "[внимание] неизвестная опция STATUSLINE_BOGUS"
 contains "$out" "STATUSLINE_PADDING = 0"
+contains "$out" "исправит $INSTALLER"
 rm "$CLAUDE_CONFIG_DIR/statusline.sh"
 out=$(install --check)
 equals "$?" "1"
@@ -888,9 +889,9 @@ lacks "$out" "same file"
 equals "$(cat "$CLAUDE_CONFIG_DIR/settings.json")" "$before"
 
 t "install: каталог настроек — сама копия репозитория"
-export CLAUDE_CONFIG_DIR="$TMP/repo-as-config"
-mkdir -p "$CLAUDE_CONFIG_DIR/tests"
-cp "$INSTALLER" "$SCRIPT" "$CLAUDE_CONFIG_DIR/" && touch "$CLAUDE_CONFIG_DIR/tests/run.sh"
+mkdir -p "$TMP/repo-copy/tests" "$TMP/repo-copy/src"
+cp "$INSTALLER" "$SCRIPT" "$TMP/repo-copy/src/" && touch "$TMP/repo-copy/tests/run.sh"
+export CLAUDE_CONFIG_DIR="$TMP/repo-copy/src"
 out=$("$BASH" "$CLAUDE_CONFIG_DIR/install.sh" 2>&1)
 equals "$?" "1"
 contains "$out" "это и есть установленный скрипт"

@@ -45,10 +45,10 @@ bash install.sh
 
 ```bash
 git clone https://github.com/foxtertime/claude-statusline.git
-cd claude-statusline && ./install.sh
+cd claude-statusline && make install    # или: src/install.sh
 ```
 
-В копии репозитория (её установщик узнаёт по `tests/run.sh`) ставится лежащий рядом `statusline.sh`; вне её скрипт всегда скачивается и сверяется, даже если рядом с установщиком есть другой `statusline.sh`.
+В копии репозитория (её установщик узнаёт по `src/statusline.sh` и `tests/run.sh`) ставится её `src/statusline.sh`; вне её скрипт всегда скачивается и сверяется, даже если рядом с установщиком есть другой `statusline.sh`.
 
 Установщик кладёт скрипт в `~/.claude/statusline.sh` и добавляет в `~/.claude/settings.json`:
 
@@ -58,15 +58,15 @@ cd claude-statusline && ./install.sh
 
 Остальные настройки не затрагиваются, включая соседние поля `statusLine` (`padding`, `refreshInterval`); прежний файл сохраняется в `settings.json.bak`. Если задана переменная `CLAUDE_CONFIG_DIR`, установка идёт в неё.
 
-Обновление: `git pull && ./install.sh` в копии репозитория или повторный запуск скачанного установщика.
+Обновление: `git pull && make install` в копии репозитория или повторный запуск скачанного установщика.
 
-Установщик же задаёт [настройки](#настройка), чтобы не править `settings.json` руками:
+Установщик же задаёт [настройки](#настройка), чтобы не править `settings.json` руками. Примеры ниже — для копии репозитория; скачанный установщик запускается так же: `bash install.sh --set …`.
 
 ```bash
-./install.sh --set STATUSLINE_LANG=ru --set STATUSLINE_HIDE=commit,spend   # опции
-./install.sh --unset STATUSLINE_HIDE                                       # убрать опцию
-./install.sh --refresh 60                                                  # statusLine.refreshInterval; 0 — убрать
-./install.sh --padding 2                                                   # statusLine.padding; 0 — убрать
+src/install.sh --set STATUSLINE_LANG=ru --set STATUSLINE_HIDE=commit,spend   # опции
+src/install.sh --unset STATUSLINE_HIDE                                       # убрать опцию
+src/install.sh --refresh 60                                                  # statusLine.refreshInterval; 0 — убрать
+src/install.sh --padding 2                                                   # statusLine.padding; 0 — убрать
 ```
 
 Опции записываются в блок `env` и применяются после перезапуска Claude Code. Повторная установка их сохраняет. `STATUSLINE_PADDING` установщик всегда выставляет сам по `statusLine.padding`.
@@ -74,13 +74,13 @@ cd claude-statusline && ./install.sh
 Проверить установку — версии `jq` и `git`, `settings.json`, путь к скрипту, пробный запуск, опции:
 
 ```bash
-./install.sh --check
+src/install.sh --check
 ```
 
 Удаление — скрипт, ключ `statusLine` и все опции `STATUSLINE_*`:
 
 ```bash
-./install.sh --uninstall
+src/install.sh --uninstall    # или: make uninstall
 ```
 
 ## Настройка
@@ -204,7 +204,7 @@ Claude Code перерисовывает статуслайн после соо�
 Запуск вручную на тестовых данных:
 
 ```bash
-echo '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage":25,"context_window_size":200000}}' | ./statusline.sh
+echo '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage":25,"context_window_size":200000}}' | src/statusline.sh
 ```
 
 ## Разработка
