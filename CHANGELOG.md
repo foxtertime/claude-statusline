@@ -12,6 +12,7 @@
 - Установщик сохраняет исходный `settings.json` в `settings.json.orig` при первом изменении и больше его не перезаписывает; `settings.json.bak`, как и раньше, — версия перед последним запуском ([#47](https://github.com/foxtertime/claude-statusline/issues/47)).
 
 ### Исправлено
+- Первый сегмент дополнительных строк `STATUSLINE_LAYOUT` и строка `compact` больше не вылезают за ширину терминала: шкала контекста укорачивается, имя сессии обрезается, а в `compact` — имя ветки ([#51](https://github.com/foxtertime/claude-statusline/issues/51)).
 - Эмодзи среди обычных символов (`⚡`, `✅`, `⌚`, `⭐`) и в блоке U+1F000–1F2FF (`🀄`, `🈁`) считаются за две колонки, как их показывает терминал: строки с ними в имени сессии, ветке или пути больше не обрезаются ([#56](https://github.com/foxtertime/claude-statusline/issues/56)).
 - Установщик больше не заменяет `settings.json`, который является символической ссылкой (например, из менеджера dotfiles), обычным файлом и сохраняет его права доступа ([#46](https://github.com/foxtertime/claude-statusline/issues/46)).
 - `install.sh --padding 00` и `--refresh 00` теперь считаются нулём и убирают ключ, как `0`; ведущие нули в числах отбрасываются ([#49](https://github.com/foxtertime/claude-statusline/issues/49)).

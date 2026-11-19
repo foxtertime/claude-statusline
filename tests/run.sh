@@ -776,6 +776,19 @@ equals "$(STATUSLINE_LANG=ru layout compact | cut -d'│' -f4-)" " Контек�
 contains "$(NO_COLOR='' layout compact)" "${esc}[33m62%"
 equals "$(printf '{}' | STATUSLINE_LAYOUT=compact "$BASH" "$SCRIPT")" "? │ [no git] │ ?"
 
+t "раскладка: первый сегмент строки и compact тоже сужаются"
+equals "$(line 3 "$(COLUMNS=40 layout 'cost/context')")" "Ctx ━━━━━━━━━━━━──────── 62%"
+equals "$(line 3 "$(COLUMNS=30 layout 'cost/context')")" "Ctx ━━━━━━━━━━━─────── 62%"
+equals "$(line 3 "$(COLUMNS=20 layout 'cost/context')")" "Ctx ━━━━━─── 62%"
+equals "$(line 3 "$(COLUMNS=20 layout 'cost/session')")" "refactor auth m…"
+equals "$(line 3 "$(COLUMNS=40 layout 'cost/session')")" "refactor auth middleware"
+git init -q -b feature/a-really-long-branch-name-here "$TMP/compact/lb"
+long_branch=$(in_dir "$TMP/compact/lb")
+compact_at() { line 1 "$(printf '%s' "$long_branch" | COLUMNS=$1 STATUSLINE_LAYOUT=compact "$BASH" "$SCRIPT")"; }
+equals "$(compact_at 200)" "…/lb │ feature/a-really-long-branch-name-here [clean] │ ?"
+equals "$(compact_at 40)" "…/lb │ feature/a-really-lon… [clean]"
+equals "$(compact_at 20)" "…/lb │ feature/… [clean]"
+
 # --- русский режим, цвета, ASCII --------------------------------------------
 
 ru() { STATUSLINE_LANG=ru "$@"; }
