@@ -652,47 +652,47 @@ read_input() {
                 | if $cents % 100 == 0 then "\($cents / 100 | floor)"
                   else "\($cents / 100 | floor).\($cents % 100 + 100 | tostring | .[1:])" end
             else "" end;
-        (.context_window // {}) as $ctx
-        | (.rate_limits // {}) as $rl
-        | ($rl.spend_limit // {}) as $spend
-        | @sh "cwd=\(.workspace.current_dir // .cwd | str)",
-          @sh "model=\(.model.display_name | text)",
-          @sh "effort=\(.effort.level | text)",
-          @sh "fast=\(if .fast_mode == true then "1" else "" end)",
-          @sh "vim_mode=\(.vim.mode | text)",
-          @sh "agent=\(.agent.name | text)",
-          @sh "session=\(.session_name | text)",
-          @sh "session_id=\(.session_id | str)",
-          @sh "repo_host=\(.workspace.repo.host | str)",
-          @sh "repo_owner=\(.workspace.repo.owner | str)",
-          @sh "repo_name=\(.workspace.repo.name | str)",
-          @sh "worktree=\(.workspace.git_worktree // .worktree.name | text)",
-          @sh "ctx_pct=\($ctx.used_percentage | int)",
-          @sh "ctx_used=\($ctx.total_input_tokens | int)",
-          @sh "ctx_size=\($ctx.context_window_size | int)",
-          @sh "five_pct=\($rl.five_hour.used_percentage | int)",
-          @sh "five_reset=\($rl.five_hour.resets_at | int)",
-          @sh "week_pct=\($rl.seven_day.used_percentage | int)",
-          @sh "week_reset=\($rl.seven_day.resets_at | int)",
-          @sh "spend_pct=\($spend.used_percentage | int)",
-          @sh "spend_reset=\($spend.resets_at | int)",
+        (.context_window? // {}) as $ctx
+        | (.rate_limits? // {}) as $rl
+        | ($rl.spend_limit? // {}) as $spend
+        | @sh "cwd=\(.workspace?.current_dir? // .cwd? | str)",
+          @sh "model=\(.model?.display_name? | text)",
+          @sh "effort=\(.effort?.level? | text)",
+          @sh "fast=\(if .fast_mode? == true then "1" else "" end)",
+          @sh "vim_mode=\(.vim?.mode? | text)",
+          @sh "agent=\(.agent?.name? | text)",
+          @sh "session=\(.session_name? | text)",
+          @sh "session_id=\(.session_id? | str)",
+          @sh "repo_host=\(.workspace?.repo?.host? | str)",
+          @sh "repo_owner=\(.workspace?.repo?.owner? | str)",
+          @sh "repo_name=\(.workspace?.repo?.name? | str)",
+          @sh "worktree=\(.workspace?.git_worktree? // .worktree?.name? | text)",
+          @sh "ctx_pct=\($ctx.used_percentage? | int)",
+          @sh "ctx_used=\($ctx.total_input_tokens? | int)",
+          @sh "ctx_size=\($ctx.context_window_size? | int)",
+          @sh "five_pct=\($rl.five_hour?.used_percentage? | int)",
+          @sh "five_reset=\($rl.five_hour?.resets_at? | int)",
+          @sh "week_pct=\($rl.seven_day?.used_percentage? | int)",
+          @sh "week_reset=\($rl.seven_day?.resets_at? | int)",
+          @sh "spend_pct=\($spend.used_percentage? | int)",
+          @sh "spend_reset=\($spend.resets_at? | int)",
           @sh "spend_usd=\(
-              ($spend.used_usd | usd) as $used | ($spend.limit_usd | usd) as $limit
+              ($spend.used_usd? | usd) as $used | ($spend.limit_usd? | usd) as $limit
               | if $used != "" and $limit != "" then "$\($used) / $\($limit)" else "" end)",
-          @sh "pr_number=\(.pr.number | int)",
-          @sh "pr_url=\(.pr.url | str)",
-          @sh "pr_state=\(.pr.review_state | str)",
-          @sh "pr_kind=\(.pr.kind | str)",
-          @sh "cost_usd=\(.cost.total_cost_usd | money)",
-          @sh "cost_secs=\(.cost.total_duration_ms | if type == "number" then . / 1000 | floor else "" end)",
-          @sh "lines_added=\(.cost.total_lines_added | int)",
-          @sh "lines_removed=\(.cost.total_lines_removed | int)",
+          @sh "pr_number=\(.pr?.number? | int)",
+          @sh "pr_url=\(.pr?.url? | str)",
+          @sh "pr_state=\(.pr?.review_state? | str)",
+          @sh "pr_kind=\(.pr?.kind? | str)",
+          @sh "cost_usd=\(.cost?.total_cost_usd? | money)",
+          @sh "cost_secs=\(.cost?.total_duration_ms? | if type == "number" then . / 1000 | floor else "" end)",
+          @sh "lines_added=\(.cost?.total_lines_added? | int)",
+          @sh "lines_removed=\(.cost?.total_lines_removed? | int)",
           @sh "cache_state=\(
-              if .prompt_cache.caching_observed != true then ""
-              elif .prompt_cache.warm == true then "warm"
+              if .prompt_cache?.caching_observed? != true then ""
+              elif .prompt_cache?.warm? == true then "warm"
               else "cold" end)",
-          @sh "cache_hit=\(.prompt_cache.hit_ratio | if type == "number" then . * 100 | round else "" end)",
-          @sh "cache_expires=\(.prompt_cache.expires_at | int)"
+          @sh "cache_hit=\(.prompt_cache?.hit_ratio? | if type == "number" then . * 100 | round else "" end)",
+          @sh "cache_expires=\(.prompt_cache?.expires_at? | int)"
     '
     if [ $# -gt 0 ]; then
         assignments=$(printf '%s' "$1" | jq -r "$program" 2>/dev/null) || return 0
