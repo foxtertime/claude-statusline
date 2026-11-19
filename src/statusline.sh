@@ -636,12 +636,15 @@ read_input() {
     local assignments program
     # shellcheck disable=SC2016  # $ctx, $rl, $spend are jq variables
     program='
-        def int: if type == "number" then round else "" end;
+        # Bash arithmetic is 64-bit, and jq prints large numbers in exponent
+        # form (1e+30) that bash cannot parse: such values are dropped.
+        def safe: type == "number" and . > -1e15 and . < 1e15;
+        def int: if safe then round else "" end;
         def str: if type == "string" then . else "" end;
         # Free text shown as is: control characters would break the layout.
         def text: str | gsub("\\p{Cc}"; " ");
         def money:
-            if type == "number" and . > 0
+            if type == "number" and . > 0 and . < 1e12
             then (. * 100 | round) as $cents
                 | "\($cents / 100 | floor).\($cents % 100 + 100 | tostring | .[1:])"
             else "" end;
@@ -684,14 +687,14 @@ read_input() {
           @sh "pr_state=\(.pr?.review_state? | str)",
           @sh "pr_kind=\(.pr?.kind? | str)",
           @sh "cost_usd=\(.cost?.total_cost_usd? | money)",
-          @sh "cost_secs=\(.cost?.total_duration_ms? | if type == "number" then . / 1000 | floor else "" end)",
+          @sh "cost_secs=\(.cost?.total_duration_ms? | if safe then . / 1000 | floor else "" end)",
           @sh "lines_added=\(.cost?.total_lines_added? | int)",
           @sh "lines_removed=\(.cost?.total_lines_removed? | int)",
           @sh "cache_state=\(
               if .prompt_cache?.caching_observed? != true then ""
               elif .prompt_cache?.warm? == true then "warm"
               else "cold" end)",
-          @sh "cache_hit=\(.prompt_cache?.hit_ratio? | if type == "number" then . * 100 | round else "" end)",
+          @sh "cache_hit=\(.prompt_cache?.hit_ratio? | if safe then . * 100 | int else "" end)",
           @sh "cache_expires=\(.prompt_cache?.expires_at? | int)"
     '
     if [ $# -gt 0 ]; then
