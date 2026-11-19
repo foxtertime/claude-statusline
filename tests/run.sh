@@ -863,6 +863,13 @@ equals "$(jq -c '.statusLine | keys' "$settings")" '["command","type"]'
 install --unset STATUSLINE_LANG >/dev/null
 equals "$(jq -c 'has("env")' "$settings")" "false"
 
+t "install: 00 считается нулём, ведущие нули отбрасываются"
+install --refresh 030 --padding 02 >/dev/null
+equals "$(jq -c '[.statusLine.refreshInterval, .statusLine.padding, .env.STATUSLINE_PADDING]' "$settings")" '[30,2,"2"]'
+install --refresh 00 --padding 00 >/dev/null
+equals "$(jq -c '.statusLine | keys' "$settings")" '["command","type"]'
+equals "$(jq -c 'has("env")' "$settings")" "false"
+
 t "install: STATUSLINE_PADDING следует за statusLine.padding, заданным вручную"
 jq '.statusLine.padding = 3' "$settings" >"$settings.tmp" && mv "$settings.tmp" "$settings"
 install >/dev/null

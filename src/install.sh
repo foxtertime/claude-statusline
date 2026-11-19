@@ -162,11 +162,14 @@ add_unset() {
     UNSETS=$(jq -n --argjson a "$UNSETS" --arg k "$1" '$a + [$k]')
 }
 
-# number_arg <флаг> <значение> — неотрицательное целое
+# number_arg <флаг> <значение> — неотрицательное целое; в REPLY оно же без
+# ведущих нулей, чтобы 00 считалось нулём
 number_arg() {
     case $2 in
         '' | *[!0-9]*) die "$1: ожидается неотрицательное целое, получено '$2'" ;;
     esac
+    REPLY=${2#"${2%%[!0]*}"}
+    REPLY=${REPLY:-0}
 }
 
 # Переносит настройки в settings.json. STATUSLINE_PADDING всегда следует за
@@ -397,13 +400,13 @@ while [ $# -gt 0 ]; do
         --refresh)
             [ $# -ge 2 ] || die "--refresh: нужно число секунд"
             number_arg --refresh "$2"
-            REFRESH=$2
+            REFRESH=$REPLY
             shift
             ;;
         --padding)
             [ $# -ge 2 ] || die "--padding: нужно число"
             number_arg --padding "$2"
-            PADDING=$2
+            PADDING=$REPLY
             shift
             ;;
         *)
