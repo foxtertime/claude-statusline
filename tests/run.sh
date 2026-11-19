@@ -394,6 +394,20 @@ equals "$(line 1 "$(COLUMNS=30 render "$long")")" "…/app │ feature/very-l…
 equals "$(line 1 "$(COLUMNS=24 render "$long")")" "…/app │ feature/… ?1"
 equals "$(line 1 "$(COLUMNS=40 render "$long")")" "…/app │ feature/very-… ?1 wt:wt1 #12"
 
+t "ширина: слишком длинное имя последней папки обрезается"
+long_name=$(printf 'a%.0s' $(seq 150))
+mkdir -p "$TMP/longdir/$long_name" "$TMP/longdir/项目数据测试文件夹路径项目数据测试文件夹路径"
+long_dir=$(in_dir "$TMP/longdir/$long_name")
+cjk_dir=$(in_dir "$TMP/longdir/项目数据测试文件夹路径项目数据测试文件夹路径")
+equals "$(line 1 "$(COLUMNS=30 render "$long_dir")")" "…/aaaaaaaaaaaa… │ [no git]"
+# не короче 8 колонок, даже если строка так и не поместилась
+equals "$(line 1 "$(COLUMNS=20 render "$long_dir")")" "…/aaaaa… │ [no git]"
+equals "$(line 1 "$(COLUMNS=30 render "$cjk_dir")")" "…/项目数据测试… │ [no git]"
+equals "$(line 1 "$(COLUMNS=21 render "$cjk_dir")")" "…/项目… │ [no git]"
+equals "$(line 1 "$(COLUMNS=30 STATUSLINE_LAYOUT=compact render "$long_dir")")" "…/aaaaaaaaaaaa… │ [no git]"
+# ссылка по-прежнему ведёт на полный путь
+contains "$(NO_COLOR='' COLUMNS=30 render "$long_dir")" "/longdir/$long_name"$'\a'"…/aaaaaaaaaaaa…"
+
 t "ширина: некорректный COLUMNS игнорируется"
 for bad in 0 19 abc 99999; do
     contains "$(width "$bad")" "$tilde/work/proj/app │ feature/very-long-branch-name [clean] │ initial"

@@ -36,6 +36,7 @@ VERSION="1.4.0"
 SUBJECT_MAX=40
 SESSION_MAX=30
 BRANCH_MIN=8 # never truncate a branch name below this many characters
+DIR_MIN=8    # columns a cut directory name keeps, "…/" and "…" included
 # Claude Code shows COLUMNS - 4 - 2 * padding columns of a status line and
 # cuts longer lines with an ellipsis (measured on Claude Code 2.1.327 at
 # widths 80, 100 and 130 with padding 0-3).
@@ -862,7 +863,7 @@ query_git() {
 
 # --- rendering --------------------------------------------------------------
 
-# render_location <level> [overflow]
+# render_location <level> [overflow] [directory overflow]
 # Level 0 is the full line; each next level gives up something to save width:
 #   1  drop the last commit
 #   2  shorten the path to its last two components
@@ -870,8 +871,10 @@ query_git() {
 #   4  truncate the branch name by <overflow> columns
 #   5  also drop the worktree name and the pull request
 #   6  also drop ahead/behind and stash
+# A directory overflow cuts the shortened path by that many columns, down to
+# DIR_MIN; fit_location uses it after level 6.
 render_location() {
-    local level=$1 overflow=${2:-0}
+    local level=$1 overflow=${2:-0} dir_overflow=${3:-0}
     local dir=${cwd:-?} branch=$git_branch
     dir=${dir//[[:cntrl:]]/ }
     if [ -n "${HOME:-}" ]; then
@@ -883,6 +886,30 @@ render_location() {
     if [ "$level" -ge 2 ]; then
         short_path "$dir" $((level >= 3 ? 1 : 2))
         dir=$REPLY
+    fi
+    # The last component alone is too wide: cut it, keeping its start.
+    visible_len "$dir"
+    if [ "$dir_overflow" -gt 0 ] && [ "$REPLY" -gt "$DIR_MIN" ]; then
+        local dir_width target keep
+        visible_len "$dir"
+        dir_width=$REPLY
+        target=$((dir_width - dir_overflow))
+        [ "$target" -lt "$DIR_MIN" ] && target=$DIR_MIN
+        # Start from the share of characters that should fit, then step: a
+        # mix of narrow and wide characters makes the first guess inexact.
+        keep=$((${#dir} * target / dir_width))
+        [ "$keep" -lt 1 ] && keep=1
+        while [ "$keep" -gt 1 ]; do
+            visible_len "${dir:0:keep}${G_ELLIPSIS}"
+            [ "$REPLY" -le "$target" ] && break
+            keep=$((keep - 1))
+        done
+        while :; do
+            visible_len "${dir:0:keep+1}${G_ELLIPSIS}"
+            [ "$REPLY" -le "$target" ] || break
+            keep=$((keep + 1))
+        done
+        dir="${dir:0:keep}${G_ELLIPSIS}"
     fi
     if [ "$level" -ge 4 ] && [ "$overflow" -gt 0 ]; then
         local keep=$((${#branch} - overflow - 1))
@@ -967,7 +994,7 @@ render_pr() {
 
 # fit_location — the fullest line 1 that fits MAX_WIDTH
 fit_location() {
-    local level line overflow
+    local level line overflow branch_overflow=0
     for level in 0 1 2 3 4 5 6; do
         render_location "$level"
         [ "$MAX_WIDTH" -eq 0 ] && return
@@ -978,13 +1005,18 @@ fit_location() {
         # full branch: an overflow left over from the level before would cut
         # it by too little once the worktree and the PR are gone.
         if [ "$overflow" -gt 0 ] && [ "$level" -ge 4 ]; then
-            render_location "$level" "$overflow"
+            branch_overflow=$overflow
+            render_location "$level" "$branch_overflow"
             line=$REPLY
             visible_len "$line"
             overflow=$((REPLY - MAX_WIDTH))
         fi
         [ "$overflow" -le 0 ] && break
     done
+    if [ "$overflow" -gt 0 ]; then
+        render_location 6 "$branch_overflow" "$overflow"
+        line=$REPLY
+    fi
     REPLY=$line
 }
 
@@ -1209,7 +1241,12 @@ render_compact() {
     # line 1 does.
     if [ "$MAX_WIDTH" -gt 0 ] && ! fits "$REPLY"; then
         visible_len "$REPLY"
-        render_location 6 $((REPLY - MAX_WIDTH))
+        local branch_overflow=$((REPLY - MAX_WIDTH))
+        render_location 6 "$branch_overflow"
+        if ! fits "$REPLY"; then
+            visible_len "$REPLY"
+            render_location 6 "$branch_overflow" $((REPLY - MAX_WIDTH))
+        fi
     fi
     return 0
 }
