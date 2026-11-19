@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Добавлено
+- Текущая директория в строке 1 — кликабельная ссылка `file://` на полный путь: терминалы с поддержкой OSC 8 открывают её в файловом менеджере или редакторе. В ссылке есть имя хоста, чтобы по SSH терминал не открыл одноимённую папку на своей машине. Отключается вместе с остальными ссылками: `STATUSLINE_HIDE=links` или `NO_COLOR` ([#71](https://github.com/foxtertime/claude-statusline/issues/71)).
+
 ### Изменено
 - `statusline.sh` и `install.sh` перенесены в каталог `src/`. В копии репозитория установка и обновление теперь `make install` (или `src/install.sh`) вместо `./install.sh`. Установленный скрипт, `settings.json` и установка без клонирования не меняются: файлы в релизе по-прежнему называются `statusline.sh`, `install.sh` и `SHA256SUMS` ([#69](https://github.com/foxtertime/claude-statusline/issues/69)).
 
