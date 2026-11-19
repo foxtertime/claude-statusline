@@ -317,7 +317,18 @@ wide_count() {
         s=${s//$g/}
     done
     s=${s//[$'\302'-$'\337'][$'\200'-$'\277']/}
-    local i=0 j len=${#s} b cp n count=0
+    # Whole wide blocks are counted by deleting them, which is much faster
+    # than the byte loop below: U+3000-9FFF (lead bytes E3-E9) except the
+    # narrow U+303F, U+B000-CFFF Hangul (EB-EC), U+20000-3FFFF (F0 A0-BF).
+    local before count=0
+    s=${s//$'\343\200\277'/}
+    before=${#s}
+    s=${s//[$'\343'-$'\351'$'\353'$'\354'][$'\200'-$'\277'][$'\200'-$'\277']/}
+    count=$(((before - ${#s}) / 3))
+    before=${#s}
+    s=${s//$'\360'[$'\240'-$'\277'][$'\200'-$'\277'][$'\200'-$'\277']/}
+    count=$((count + (before - ${#s}) / 4))
+    local i=0 j len=${#s} b cp n
     while [ "$i" -lt "$len" ]; do
         byte_at "$s" "$i"
         b=$REPLY
