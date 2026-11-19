@@ -224,6 +224,8 @@ make hooks   # включить проверку сообщений коммит
 
 Ветвление по Gitflow, коммиты по Conventional Commits, версии по SemVer — подробности и порядок выпуска релиза в [CONTRIBUTING.md](CONTRIBUTING.md). История изменений — в [CHANGELOG.md](CHANGELOG.md).
 
+Об уязвимостях сообщайте приватно — см. [SECURITY.md](SECURITY.md).
+
 ## Лицензия
 
 [MIT](LICENSE)
