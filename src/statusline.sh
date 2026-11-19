@@ -366,6 +366,41 @@ link() {
     esac
 }
 
+# dir_url — file:// URL of the working directory for the line 1 link, in
+# DIR_URL; empty when links are off or the path is not absolute. Computed once:
+# render_location runs for every fitting level. Bytes outside the unreserved
+# set are percent-encoded, so control characters cannot end the escape early.
+DIR_URL=""
+DIR_URL_DONE=0
+dir_url() {
+    [ "$DIR_URL_DONE" -eq 1 ] && return 0
+    DIR_URL_DONE=1
+    [ "$LINKS" -eq 1 ] || return 0
+    local path=$cwd host=${HOSTNAME:-}
+    case $path in /*) ;; *) return 0 ;; esac
+    # The host lets a terminal tell a remote (SSH) path from a local one.
+    case $host in *[!A-Za-z0-9.-]*) host="" ;; esac
+    case $path in
+        *[!A-Za-z0-9._~/-]*)
+            local LC_ALL=C
+            local i c out=""
+            for ((i = 0; i < ${#path}; i++)); do
+                c=${path:i:1}
+                case $c in
+                    [A-Za-z0-9._~/-]) out="${out}${c}" ;;
+                    *)
+                        byte_at "$path" "$i"
+                        printf -v c '%%%02X' "$REPLY"
+                        out="${out}${c}"
+                        ;;
+                esac
+            done
+            path=$out
+            ;;
+    esac
+    DIR_URL="file://${host}${path}"
+}
+
 # short_path <path> <keep> — "…/proj/app": the last <keep> components
 short_path() {
     local head=$1 tail="" i
@@ -806,6 +841,8 @@ render_location() {
         [ "$keep" -lt "$BRANCH_MIN" ] && keep=$BRANCH_MIN
         [ "$keep" -lt "${#branch}" ] && branch="${branch:0:keep}${G_ELLIPSIS}"
     fi
+    dir_url
+    [ -n "$DIR_URL" ] && dir="${ESC}]8;;${DIR_URL}${BEL}${dir}${ESC}]8;;${BEL}"
     local out="${C_DIR}${dir}${C_RESET}"
     if ! shown git; then
         REPLY=$out
