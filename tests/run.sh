@@ -825,6 +825,12 @@ equals "$?" "0"
 equals "$(jq -r .theme "$settings")" "dark"
 equals "$(jq -r .statusLine.padding "$settings")" "2"
 equals "$(jq -r .statusLine.command "$settings.bak")" "old"
+equals "$(jq -r .statusLine.command "$settings.orig")" "old"
+install --set STATUSLINE_LANG=ru >/dev/null
+install --set STATUSLINE_LANG=en >/dev/null
+equals "$(jq -r .env.STATUSLINE_LANG "$settings.bak")" "ru"
+equals "$(jq -c . "$settings.orig")" '{"theme":"dark","statusLine":{"type":"command","command":"old","padding":2}}'
+install --unset STATUSLINE_LANG >/dev/null
 
 t "install: команда из settings.json запускается при пробеле в пути"
 equals "$(echo '{}' | bash -c "$(jq -r .statusLine.command "$settings")" | wc -l | tr -d ' ')" "2"
@@ -860,7 +866,7 @@ install --uninstall >/dev/null
 if [ -L "$CLAUDE_CONFIG_DIR/settings.json" ]; then ok; else fail "--uninstall заменил ссылку"; fi
 equals "$(jq -c . "$TMP/dotfiles/settings.json")" '{"theme":"dark"}'
 leftovers=("$CLAUDE_CONFIG_DIR"/settings.json.*)
-equals "${leftovers[*]}" "$CLAUDE_CONFIG_DIR/settings.json.bak"
+equals "${leftovers[*]}" "$CLAUDE_CONFIG_DIR/settings.json.bak $CLAUDE_CONFIG_DIR/settings.json.orig"
 
 t "install: --set, --refresh и --padding пишут настройки"
 export CLAUDE_CONFIG_DIR="$TMP/opts"

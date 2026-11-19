@@ -56,7 +56,7 @@ cd claude-statusline && make install    # или: src/install.sh
 "statusLine": { "type": "command", "command": "~/.claude/statusline.sh" }
 ```
 
-Остальные настройки не затрагиваются, включая соседние поля `statusLine` (`padding`, `refreshInterval`); прежний файл сохраняется в `settings.json.bak`. Если задана переменная `CLAUDE_CONFIG_DIR`, установка идёт в неё.
+Остальные настройки не затрагиваются, включая соседние поля `statusLine` (`padding`, `refreshInterval`); версия перед последним запуском сохраняется в `settings.json.bak`, а файл, каким он был до первого запуска установщика, — в `settings.json.orig` (он не перезаписывается). Если задана переменная `CLAUDE_CONFIG_DIR`, установка идёт в неё.
 
 Обновление: `git pull && make install` в копии репозитория или повторный запуск скачанного установщика.
 
