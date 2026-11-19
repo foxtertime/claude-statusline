@@ -22,7 +22,11 @@ DEFAULT_DIR="$HOME/.claude"
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$DEFAULT_DIR}"
 SETTINGS="$CLAUDE_DIR/settings.json"
 TARGET="$CLAUDE_DIR/statusline.sh"
-SOURCE="$(cd "$(dirname "$0")" && pwd)/statusline.sh"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# Копия репозитория узнаётся по tests/run.sh: так statusline.sh, случайно
+# оказавшийся рядом со скачанным установщиком, не ставится без проверки.
+SOURCE=""
+[ -f "$HERE/statusline.sh" ] && [ -f "$HERE/tests/run.sh" ] && SOURCE="$HERE/statusline.sh"
 
 # Опции, которые принимает --set. STATUSLINE_PADDING не входит: его
 # установщик выставляет сам по statusLine.padding (см. --padding).
@@ -99,9 +103,9 @@ sha256() {
     fi
 }
 
-# fetch_source — если statusline.sh нет рядом, скачать его из релиза
+# fetch_source — вне копии репозитория скачать statusline.sh из релиза
 fetch_source() {
-    [ -f "$SOURCE" ] && return 0
+    [ -n "$SOURCE" ] && return 0
 
     local release=${STATUSLINE_RELEASE:-latest} base
     case $release in
@@ -186,6 +190,7 @@ SETTINGS_FILTER='
 do_install() {
     require_jq
     fetch_source
+    [ "$SOURCE" -ef "$TARGET" ] && die "$SOURCE — это и есть установленный скрипт; запустите установщик из копии репозитория или скачанный отдельно"
 
     mkdir -p "$CLAUDE_DIR"
     local args=(--arg cmd "$COMMAND" --arg refresh "$REFRESH" --arg padding "$PADDING"
@@ -324,7 +329,7 @@ check_settings() {
 
     local installed
     installed=$("$script" --version 2>/dev/null | cut -d' ' -f2)
-    if [ -f "$SOURCE" ]; then
+    if [ -n "$SOURCE" ]; then
         local available
         available=$("$BASH" "$SOURCE" --version 2>/dev/null | cut -d' ' -f2)
         if [ "$installed" = "$available" ]; then
