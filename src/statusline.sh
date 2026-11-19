@@ -347,10 +347,38 @@ byte_at() {
     return 0
 }
 
+# Wide code points scattered among narrow symbols (East_Asian_Width=W,
+# mostly emoji presentation: ⌚ ⚡ ✅ ⭐ 🀄 🈁): decimal "first-last" pairs.
+WIDE_SYMBOLS="8986-8987 9001-9002 9193-9196 9200-9200 9203-9203 9725-9726
+    9748-9749 9800-9811 9855-9855 9875-9875 9889-9889 9898-9899 9917-9918
+    9924-9925 9934-9934 9940-9940 9962-9962 9970-9971 9973-9973 9978-9978
+    9981-9981 9989-9989 9994-9995 10024-10024 10060-10060 10062-10062
+    10067-10069 10071-10071 10133-10135 10160-10160 10175-10175
+    11035-11036 11088-11088 11093-11093"
+WIDE_SYMBOLS_SMP="126980-126980 127183-127183 127374-127374 127377-127386
+    127488-127490 127504-127547 127552-127560 127568-127569 127584-127589"
+
+# in_ranges <code point> <"first-last" pairs>
+in_ranges() {
+    local pair
+    for pair in $2; do
+        [ "$1" -ge "${pair%-*}" ] && [ "$1" -le "${pair#*-}" ] && return 0
+    done
+    return 1
+}
+
 # is_wide <code point> — East Asian Wide/Fullwidth blocks and emoji
 is_wide() {
     local c=$1
     [ "$c" -le 4447 ] && return 0 # 1100-115F Hangul Jamo
+    if [ "$c" -ge 8986 ] && [ "$c" -le 11093 ]; then
+        in_ranges "$c" "$WIDE_SYMBOLS" # 231A-2B55 symbols
+        return
+    fi
+    if [ "$c" -ge 126980 ] && [ "$c" -le 127589 ]; then
+        in_ranges "$c" "$WIDE_SYMBOLS_SMP" # 1F004-1F265 tiles, enclosed
+        return
+    fi
     [ "$c" -ge 11904 ] && [ "$c" -le 42191 ] &&
         [ "$c" -ne 12351 ] && return 0                     # 2E80-A4CF CJK, kana
     [ "$c" -ge 44032 ] && [ "$c" -le 55203 ] && return 0   # AC00-D7A3 Hangul
