@@ -989,21 +989,68 @@ fit_location() {
     REPLY=$line
 }
 
-# join_fit [use head forms] — join SEGMENTS with the separator, dropping
-# segments from the end until the line fits MAX_WIDTH. The first segment
-# always stays; on line 2 it may still shrink through HEAD_FORMS.
-join_fit() {
-    local count=${#SEGMENTS[@]} line i
-    while :; do
-        line=${SEGMENTS[0]}
-        for ((i = 1; i < count; i++)); do
-            line="${line}${SEP}${SEGMENTS[i]}"
+# join_line <count> — the first <count> SEGMENTS joined with the separator
+join_line() {
+    local line=${SEGMENTS[0]} i
+    for ((i = 1; i < $1; i++)); do
+        line="${line}${SEP}${SEGMENTS[i]}"
+    done
+    REPLY=$line
+}
+
+# fits <line> — the line is no wider than MAX_WIDTH; the line stays in REPLY
+fits() {
+    visible_len "$1"
+    local width=$REPLY
+    REPLY=$1
+    [ "$width" -le "$MAX_WIDTH" ]
+}
+
+# shrink_context <count> <use head forms> — before the context segment (the
+# last of <count>) is dropped: without the token count, then (on line 2)
+# with the model segment shedding agent, fast mode and effort, then with a
+# shorter bar, down to 5 cells. Succeeds with the line in REPLY.
+shrink_context() {
+    local count=$1 head=${SEGMENTS[0]} form width
+    context_form 0 "$BAR_WIDTH"
+    SEGMENTS[CTX_INDEX]=$REPLY
+    join_line "$count"
+    fits "$REPLY" && return 0
+    if [ "$2" -eq 1 ]; then
+        for form in "${HEAD_FORMS[@]:1}"; do
+            SEGMENTS[0]=$form
+            join_line "$count"
+            fits "$REPLY" && return 0
         done
+    fi
+    visible_len "$REPLY"
+    width=$((BAR_WIDTH - (REPLY - MAX_WIDTH)))
+    if [ "$width" -ge 5 ]; then
+        context_form 0 "$width"
+        SEGMENTS[CTX_INDEX]=$REPLY
+        join_line "$count"
+        fits "$REPLY" && return 0
+    fi
+    SEGMENTS[0]=$head
+    return 1
+}
+
+# join_fit [use head forms] — join SEGMENTS with the separator, dropping
+# segments from the end until the line fits MAX_WIDTH. The context segment
+# (CTX_INDEX) shrinks before it is dropped. The first segment always stays;
+# on line 2 it may still shrink through HEAD_FORMS.
+join_fit() {
+    local count=${#SEGMENTS[@]} line
+    while :; do
+        join_line "$count"
+        line=$REPLY
         if [ "$MAX_WIDTH" -eq 0 ] || [ "$count" -le 1 ]; then
             break
         fi
-        visible_len "$line"
-        [ "$REPLY" -le "$MAX_WIDTH" ] && break
+        fits "$line" && break
+        if [ "$((count - 1))" -eq "$CTX_INDEX" ] && shrink_context "$count" "${1:-0}"; then
+            return 0
+        fi
         count=$((count - 1))
     done
     # Down to the first segment and still too wide: try its shorter forms.
@@ -1041,6 +1088,20 @@ render_heads() {
     head_form 0 0 0 && HEAD_FORMS+=("$REPLY")
 }
 
+# context_form <with tokens> <bar width> — the context segment
+context_form() {
+    local out
+    bar "$ctx_pct" "$2"
+    out="${C_DIM}${L_CTX}${C_RESET} ${REPLY} ${C_TEXT}${ctx_pct}%"
+    if [ "$1" -eq 1 ] && [ -n "$ctx_used" ] && [ -n "$ctx_size" ] && shown tokens; then
+        fmt_tokens "$ctx_used"
+        out="${out} (${REPLY} / "
+        fmt_tokens "$ctx_size"
+        out="${out}${REPLY})"
+    fi
+    REPLY="${out}${C_RESET}"
+}
+
 # render_segment <name> — one line-2 segment in REPLY, empty when it has no
 # data or is hidden
 render_segment() {
@@ -1049,15 +1110,7 @@ render_segment() {
     case $1 in
         context)
             [ -n "$ctx_pct" ] && shown context || return 0
-            bar "$ctx_pct"
-            out="${C_DIM}${L_CTX}${C_RESET} ${REPLY} ${C_TEXT}${ctx_pct}%"
-            if [ -n "$ctx_used" ] && [ -n "$ctx_size" ] && shown tokens; then
-                fmt_tokens "$ctx_used"
-                out="${out} (${REPLY} / "
-                fmt_tokens "$ctx_size"
-                out="${out}${REPLY})"
-            fi
-            REPLY="${out}${C_RESET}"
+            context_form 1 "$BAR_WIDTH"
             ;;
         cost)
             shown cost && render_cost
@@ -1091,9 +1144,12 @@ render_lines() {
         else
             SEGMENTS=()
         fi
+        CTX_INDEX=-1
         for name in ${LAYOUT_GROUPS[g]}; do
             render_segment "$name"
-            [ -n "$REPLY" ] && SEGMENTS+=("$REPLY")
+            [ -n "$REPLY" ] || continue
+            [ "$name" = context ] && CTX_INDEX=${#SEGMENTS[@]}
+            SEGMENTS+=("$REPLY")
         done
         [ "${#SEGMENTS[@]}" -gt 0 ] || continue
         join_fit $((g == 0 ? 1 : 0))
@@ -1112,6 +1168,7 @@ compact_limit() {
 # the location (last path component, branch and working tree state) │ model
 # and effort │ context % │ limit percentages. Segments drop from the end.
 render_compact() {
+    CTX_INDEX=-1
     render_location 6
     SEGMENTS=("$REPLY")
     head_form 1 0 0
