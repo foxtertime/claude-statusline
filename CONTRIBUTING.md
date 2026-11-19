@@ -62,6 +62,7 @@ gh issue close <номер> --comment "Сделано в #<номер PR>"
 - Issue, взятая в работу, и открытый pull request назначаются на себя (`--assignee @me`).
 - Если в issue есть чек-лист (`- [ ]`), каждый пункт отмечается, как только сделан (`gh issue edit <номер> --body-file …`). К слиянию pull request'а все пункты, которые он закрывает, должны быть отмечены.
 - `Closes #N` закрывает issue автоматически лишь при слиянии в `main`, поэтому после слияния в `develop` issue закрывается вручную.
+- Dependabot раз в неделю открывает pull request в `develop` с обновлениями GitHub Actions (`.github/dependabot.yml`, заголовки `ci: bump …`). Они проходят те же проверки и сливаются так же — merge-коммитом при зелёном CI.
 
 ## Коммиты — Conventional Commits
 
