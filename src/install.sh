@@ -70,7 +70,9 @@ usage() {
 }
 
 # update_settings <jq-фильтр> [аргументы jq...]
-# Пишет через временный файл: при сбое jq settings.json остаётся нетронутым.
+# jq пишет во временный файл: при сбое settings.json остаётся нетронутым.
+# Результат копируется поверх старого файла, а не переносится через mv: так
+# символическая ссылка (менеджеры dotfiles) и права файла сохраняются.
 update_settings() {
     local tmp
     tmp=$(mktemp "$SETTINGS.XXXXXX")
@@ -79,7 +81,8 @@ update_settings() {
         die "$SETTINGS — не валидный JSON, файл не изменён"
     fi
     cp "$SETTINGS" "$SETTINGS.bak"
-    mv "$tmp" "$SETTINGS"
+    cat "$tmp" >"$SETTINGS"
+    rm -f "$tmp"
 }
 
 require_jq() {
