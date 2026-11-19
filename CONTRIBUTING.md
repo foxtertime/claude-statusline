@@ -42,6 +42,8 @@ make fmt     # отформатировать код
 
 Для ошибок и предложений есть шаблоны (`.github/ISSUE_TEMPLATE/`): шаблон ошибки просит входной JSON, ширину, опции, ОС, версию bash и вывод `install.sh --check`, шаблон предложения добавляет стандартный чек-лист. Для мелких задач и chore можно открыть пустую issue.
 
+Об уязвимости — не в issue, а приватно, как описано в [SECURITY.md](SECURITY.md).
+
 ```bash
 gh issue create --assignee @me               # или найти существующую: gh issue list,
                                              # и взять её: gh issue edit <номер> --add-assignee @me
