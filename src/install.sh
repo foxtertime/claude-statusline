@@ -70,7 +70,9 @@ usage() {
 }
 
 # update_settings <jq-фильтр> [аргументы jq...]
-# Пишет через временный файл: при сбое jq settings.json остаётся нетронутым.
+# jq пишет во временный файл: при сбое settings.json остаётся нетронутым.
+# Результат копируется поверх старого файла, а не переносится через mv: так
+# символическая ссылка (менеджеры dotfiles) и права файла сохраняются.
 update_settings() {
     local tmp
     tmp=$(mktemp "$SETTINGS.XXXXXX")
@@ -78,8 +80,12 @@ update_settings() {
         rm -f "$tmp"
         die "$SETTINGS — не валидный JSON, файл не изменён"
     fi
+    # .orig — файл до первого изменения установщиком, не перезаписывается;
+    # .bak — версия перед последним запуском.
+    [ -e "$SETTINGS.orig" ] || cp "$SETTINGS" "$SETTINGS.orig"
     cp "$SETTINGS" "$SETTINGS.bak"
-    mv "$tmp" "$SETTINGS"
+    cat "$tmp" >"$SETTINGS"
+    rm -f "$tmp"
 }
 
 require_jq() {
@@ -162,11 +168,14 @@ add_unset() {
     UNSETS=$(jq -n --argjson a "$UNSETS" --arg k "$1" '$a + [$k]')
 }
 
-# number_arg <флаг> <значение> — неотрицательное целое
+# number_arg <флаг> <значение> — неотрицательное целое; в REPLY оно же без
+# ведущих нулей, чтобы 00 считалось нулём
 number_arg() {
     case $2 in
         '' | *[!0-9]*) die "$1: ожидается неотрицательное целое, получено '$2'" ;;
     esac
+    REPLY=${2#"${2%%[!0]*}"}
+    REPLY=${REPLY:-0}
 }
 
 # Переносит настройки в settings.json. STATUSLINE_PADDING всегда следует за
@@ -174,7 +183,12 @@ number_arg() {
 # строки с отступом не помещаются.
 # shellcheck disable=SC2016  # $cmd, $sets и т. д. — переменные jq
 SETTINGS_FILTER='
-    .statusLine = ((.statusLine // {}) + {type: "command", command: $cmd})
+    (.statusLine.command // "") as $old
+    # Команду с опциями впереди (STATUSLINE_LANG=en ~/.claude/statusline.sh)
+    # оставляем как есть, чтобы переустановка не стирала эти опции.
+    | (if ($old | type) == "string" and ($old | endswith(" " + $cmd))
+       then $old else $cmd end) as $command
+    | .statusLine = ((.statusLine // {}) + {type: "command", command: $command})
     | if $refresh == "" then .
       elif $refresh == "0" then del(.statusLine.refreshInterval)
       else .statusLine.refreshInterval = ($refresh | tonumber) end
@@ -202,7 +216,7 @@ do_install() {
         --argjson sets "$SETS" --argjson unsets "$UNSETS")
     if [ -f "$SETTINGS" ]; then
         update_settings "${args[@]}" "$SETTINGS_FILTER"
-        echo "Обновлён $SETTINGS (бэкап: $SETTINGS.bak)"
+        echo "Обновлён $SETTINGS (бэкап: $SETTINGS.bak, исходный файл: $SETTINGS.orig)"
     else
         jq -n "${args[@]}" "{} | $SETTINGS_FILTER" >"$SETTINGS"
         echo "Создан $SETTINGS"
@@ -229,7 +243,7 @@ do_uninstall() {
             del(.statusLine)
             | if .env then .env |= with_entries(select(.key | startswith("STATUSLINE_") | not)) else . end
             | if .env == {} then del(.env) else . end'
-        echo "Ключ statusLine и опции STATUSLINE_* удалены из $SETTINGS (бэкап: $SETTINGS.bak)"
+        echo "Ключ statusLine и опции STATUSLINE_* удалены из $SETTINGS (бэкап: $SETTINGS.bak, исходный файл: $SETTINGS.orig)"
     fi
     rm -f "$TARGET"
     echo "claude-statusline удалён."
@@ -319,7 +333,7 @@ check_settings() {
     report ok "statusLine.command: $command"
 
     local script=$TARGET
-    if [ "$command" != "$COMMAND" ]; then
+    if [ "$command" != "$COMMAND" ] && [ "${command% "$COMMAND"}" = "$command" ]; then
         report warn "команда отличается от той, что ставит установщик ($COMMAND)"
         # Чужая команда: берём последнее слово и раскрываем ~ сами.
         script=${command##* }
@@ -397,13 +411,13 @@ while [ $# -gt 0 ]; do
         --refresh)
             [ $# -ge 2 ] || die "--refresh: нужно число секунд"
             number_arg --refresh "$2"
-            REFRESH=$2
+            REFRESH=$REPLY
             shift
             ;;
         --padding)
             [ $# -ge 2 ] || die "--padding: нужно число"
             number_arg --padding "$2"
-            PADDING=$2
+            PADDING=$REPLY
             shift
             ;;
         *)

@@ -31,11 +31,12 @@
 
 set -u
 
-VERSION="1.4.0"
+VERSION="1.5.0"
 
 SUBJECT_MAX=40
 SESSION_MAX=30
 BRANCH_MIN=8 # never truncate a branch name below this many characters
+DIR_MIN=8    # columns a cut directory name keeps, "…/" and "…" included
 # Claude Code shows COLUMNS - 4 - 2 * padding columns of a status line and
 # cuts longer lines with an ellipsis (measured on Claude Code 2.1.327 at
 # widths 80, 100 and 130 with padding 0-3).
@@ -120,12 +121,15 @@ parse_layout() {
     while :; do
         group=${spec%%/*}
         list=""
+        # Word splitting only: a name like "*" must not match files.
+        set -f
         for name in ${group//,/ }; do
             case " $LINE2_SEGMENTS " in *" $name "*) ;; *) continue ;; esac
             case $seen in *" $name "*) continue ;; esac
             seen="${seen}${name} "
             list="${list:+$list }$name"
         done
+        set +f
         [ -n "$list" ] && groups+=("$list")
         [ "$group" = "$spec" ] && break
         spec=${spec#*/}
@@ -164,12 +168,18 @@ if [ "$LANG_CODE" = ru ]; then
     L_CURRENT="Сейчас" L_WEEKLY="Неделя" L_SPEND="Расход"
     L_APPROVED="одобрен" L_CHANGES="правки" L_PENDING="ждёт" L_DRAFT="черновик"
     L_5H="5ч" L_7D="7д"
+    L_WORKTREE="wt:" L_IN="через"
+    # Units of time: "2 ч 10 мин"
+    L_DAYS="д" L_HOURS="ч" L_MINUTES="мин" L_SECONDS="с" L_UNIT_SEP=" "
 else
     L_CTX="Ctx" L_CACHE="Cache" L_COLD="cold" L_WARM="warm"
     L_FAST="fast" L_CLEAN="[clean]" L_NO_GIT="[no git]"
     L_CURRENT="Current" L_WEEKLY="Weekly" L_SPEND="Spend"
     L_APPROVED="approved" L_CHANGES="changes" L_PENDING="pending" L_DRAFT="draft"
     L_5H="5h" L_7D="7d"
+    L_WORKTREE="wt:" L_IN="in"
+    # Units of time: "2h 10m"
+    L_DAYS="d" L_HOURS="h" L_MINUTES="m" L_SECONDS="s" L_UNIT_SEP=""
 fi
 
 # Limit labels are padded to the longest one plus a space.
@@ -308,7 +318,18 @@ wide_count() {
         s=${s//$g/}
     done
     s=${s//[$'\302'-$'\337'][$'\200'-$'\277']/}
-    local i=0 j len=${#s} b cp n count=0
+    # Whole wide blocks are counted by deleting them, which is much faster
+    # than the byte loop below: U+3000-9FFF (lead bytes E3-E9) except the
+    # narrow U+303F, U+B000-CFFF Hangul (EB-EC), U+20000-3FFFF (F0 A0-BF).
+    local before count=0
+    s=${s//$'\343\200\277'/}
+    before=${#s}
+    s=${s//[$'\343'-$'\351'$'\353'$'\354'][$'\200'-$'\277'][$'\200'-$'\277']/}
+    count=$(((before - ${#s}) / 3))
+    before=${#s}
+    s=${s//$'\360'[$'\240'-$'\277'][$'\200'-$'\277'][$'\200'-$'\277']/}
+    count=$((count + (before - ${#s}) / 4))
+    local i=0 j len=${#s} b cp n
     while [ "$i" -lt "$len" ]; do
         byte_at "$s" "$i"
         b=$REPLY
@@ -338,10 +359,38 @@ byte_at() {
     return 0
 }
 
+# Wide code points scattered among narrow symbols (East_Asian_Width=W,
+# mostly emoji presentation: ⌚ ⚡ ✅ ⭐ 🀄 🈁): decimal "first-last" pairs.
+WIDE_SYMBOLS="8986-8987 9001-9002 9193-9196 9200-9200 9203-9203 9725-9726
+    9748-9749 9800-9811 9855-9855 9875-9875 9889-9889 9898-9899 9917-9918
+    9924-9925 9934-9934 9940-9940 9962-9962 9970-9971 9973-9973 9978-9978
+    9981-9981 9989-9989 9994-9995 10024-10024 10060-10060 10062-10062
+    10067-10069 10071-10071 10133-10135 10160-10160 10175-10175
+    11035-11036 11088-11088 11093-11093"
+WIDE_SYMBOLS_SMP="126980-126980 127183-127183 127374-127374 127377-127386
+    127488-127490 127504-127547 127552-127560 127568-127569 127584-127589"
+
+# in_ranges <code point> <"first-last" pairs>
+in_ranges() {
+    local pair
+    for pair in $2; do
+        [ "$1" -ge "${pair%-*}" ] && [ "$1" -le "${pair#*-}" ] && return 0
+    done
+    return 1
+}
+
 # is_wide <code point> — East Asian Wide/Fullwidth blocks and emoji
 is_wide() {
     local c=$1
     [ "$c" -le 4447 ] && return 0 # 1100-115F Hangul Jamo
+    if [ "$c" -ge 8986 ] && [ "$c" -le 11093 ]; then
+        in_ranges "$c" "$WIDE_SYMBOLS" # 231A-2B55 symbols
+        return
+    fi
+    if [ "$c" -ge 126980 ] && [ "$c" -le 127589 ]; then
+        in_ranges "$c" "$WIDE_SYMBOLS_SMP" # 1F004-1F265 tiles, enclosed
+        return
+    fi
     [ "$c" -ge 11904 ] && [ "$c" -le 42191 ] &&
         [ "$c" -ne 12351 ] && return 0                     # 2E80-A4CF CJK, kana
     [ "$c" -ge 44032 ] && [ "$c" -le 55203 ] && return 0   # AC00-D7A3 Hangul
@@ -458,32 +507,18 @@ fmt_tokens() {
 
 # fmt_duration <seconds> — "45s", "38m", "1h 5m", "3d 4h" (ru: "38 мин", "1 ч 5 мин")
 fmt_duration() {
-    local s=$1 d h m
+    local s=$1 d h m u=$L_UNIT_SEP
     d=$((s / 86400)) h=$((s % 86400 / 3600)) m=$((s % 3600 / 60))
-    if [ "$LANG_CODE" = ru ]; then
-        if [ "$d" -gt 0 ]; then
-            REPLY="$d д"
-            [ "$h" -gt 0 ] && REPLY="$REPLY $h ч"
-        elif [ "$h" -gt 0 ]; then
-            REPLY="$h ч"
-            [ "$m" -gt 0 ] && REPLY="$REPLY $m мин"
-        elif [ "$m" -gt 0 ]; then
-            REPLY="$m мин"
-        else
-            REPLY="$s с"
-        fi
+    if [ "$d" -gt 0 ]; then
+        REPLY="${d}${u}${L_DAYS}"
+        [ "$h" -gt 0 ] && REPLY="$REPLY ${h}${u}${L_HOURS}"
+    elif [ "$h" -gt 0 ]; then
+        REPLY="${h}${u}${L_HOURS}"
+        [ "$m" -gt 0 ] && REPLY="$REPLY ${m}${u}${L_MINUTES}"
+    elif [ "$m" -gt 0 ]; then
+        REPLY="${m}${u}${L_MINUTES}"
     else
-        if [ "$d" -gt 0 ]; then
-            REPLY="${d}d"
-            [ "$h" -gt 0 ] && REPLY="$REPLY ${h}h"
-        elif [ "$h" -gt 0 ]; then
-            REPLY="${h}h"
-            [ "$m" -gt 0 ] && REPLY="$REPLY ${m}m"
-        elif [ "$m" -gt 0 ]; then
-            REPLY="${m}m"
-        else
-            REPLY="${s}s"
-        fi
+        REPLY="${s}${u}${L_SECONDS}"
     fi
 }
 
@@ -492,11 +527,11 @@ fmt_remaining() {
     set_now
     local left=$(($1 - NOW))
     if [ "$left" -lt 60 ]; then
-        if [ "$LANG_CODE" = ru ]; then REPLY="<1 мин"; else REPLY="<1m"; fi
+        REPLY="<1${L_UNIT_SEP}${L_MINUTES}"
     else
         fmt_duration "$left"
     fi
-    if [ "$LANG_CODE" = ru ]; then REPLY="через $REPLY"; else REPLY="in $REPLY"; fi
+    REPLY="$L_IN $REPLY"
 }
 
 # fmt_reset <epoch> — when a window resets. Absolute: "19:30" if today,
@@ -548,10 +583,9 @@ format_time() {
 NOW="" TODAY=""
 set_now() {
     [ -n "$NOW" ] && return 0
-    if [ -n "${EPOCHSECONDS:-}" ]; then
-        NOW=$EPOCHSECONDS
-    elif [ "$BUILTIN_TIME" -eq 1 ]; then
-        printf -v NOW '%(%s)T' -1
+    if [ "$BUILTIN_TIME" -eq 1 ]; then
+        NOW=${EPOCHSECONDS:-}
+        [ -n "$NOW" ] || printf -v NOW '%(%s)T' -1
     else
         NOW=$(date +%s)
     fi
@@ -563,12 +597,18 @@ set_now() {
 # Timestamps are relative to now so the reset times stay meaningful.
 demo_json() {
     set_now
+    # HOME goes into a JSON string: escape what would end or break it.
+    local home=${HOME:-/home/user}
+    home=${home//\\/\\\\}
+    home=${home//\"/\\\"}
+    home=${home//$'\n'/\\n}
+    home=${home//$'\t'/\\t}
     printf '%s' "{
         \"session_id\": \"demo\",
         \"session_name\": \"refactor auth middleware\",
         \"model\": {\"id\": \"claude-opus-5-5\", \"display_name\": \"Opus 5.5\"},
         \"workspace\": {
-            \"current_dir\": \"${HOME:-/home/user}/projects/app\",
+            \"current_dir\": \"${home}/projects/app\",
             \"git_worktree\": \"auth\",
             \"repo\": {\"host\": \"github.com\", \"owner\": \"example\", \"name\": \"app\"}
         },
@@ -636,57 +676,66 @@ read_input() {
     local assignments program
     # shellcheck disable=SC2016  # $ctx, $rl, $spend are jq variables
     program='
-        def int: if type == "number" then round else "" end;
+        # Bash arithmetic is 64-bit, and jq prints large numbers in exponent
+        # form (1e+30) that bash cannot parse: such values are dropped.
+        def safe: type == "number" and . > -1e15 and . < 1e15;
+        def int: if safe then round else "" end;
         def str: if type == "string" then . else "" end;
         # Free text shown as is: control characters would break the layout.
         def text: str | gsub("\\p{Cc}"; " ");
         def money:
-            if type == "number" and . > 0
+            if type == "number" and . > 0 and . < 1e12
             then (. * 100 | round) as $cents
                 | "\($cents / 100 | floor).\($cents % 100 + 100 | tostring | .[1:])"
             else "" end;
-        (.context_window // {}) as $ctx
-        | (.rate_limits // {}) as $rl
-        | ($rl.spend_limit // {}) as $spend
-        | @sh "cwd=\(.workspace.current_dir // .cwd | str)",
-          @sh "model=\(.model.display_name | text)",
-          @sh "effort=\(.effort.level | text)",
-          @sh "fast=\(if .fast_mode == true then "1" else "" end)",
-          @sh "vim_mode=\(.vim.mode | text)",
-          @sh "agent=\(.agent.name | text)",
-          @sh "session=\(.session_name | text)",
-          @sh "session_id=\(.session_id | str)",
-          @sh "repo_host=\(.workspace.repo.host | str)",
-          @sh "repo_owner=\(.workspace.repo.owner | str)",
-          @sh "repo_name=\(.workspace.repo.name | str)",
-          @sh "worktree=\(.workspace.git_worktree // .worktree.name | text)",
-          @sh "ctx_pct=\($ctx.used_percentage | int)",
-          @sh "ctx_used=\($ctx.total_input_tokens | int)",
-          @sh "ctx_size=\($ctx.context_window_size | int)",
-          @sh "five_pct=\($rl.five_hour.used_percentage | int)",
-          @sh "five_reset=\($rl.five_hour.resets_at | int)",
-          @sh "week_pct=\($rl.seven_day.used_percentage | int)",
-          @sh "week_reset=\($rl.seven_day.resets_at | int)",
-          @sh "spend_pct=\($spend.used_percentage | int)",
-          @sh "spend_reset=\($spend.resets_at | int)",
+        # Whole dollars without cents ($500), the rest rounded to cents.
+        def usd:
+            if type == "number" and . >= 0 and . < 1e12
+            then (. * 100 | round) as $cents
+                | if $cents % 100 == 0 then "\($cents / 100 | floor)"
+                  else "\($cents / 100 | floor).\($cents % 100 + 100 | tostring | .[1:])" end
+            else "" end;
+        (.context_window? // {}) as $ctx
+        | (.rate_limits? // {}) as $rl
+        | ($rl.spend_limit? // {}) as $spend
+        | @sh "cwd=\(.workspace?.current_dir? // .cwd? | str)",
+          @sh "model=\(.model?.display_name? | text)",
+          @sh "effort=\(.effort?.level? | text)",
+          @sh "fast=\(if .fast_mode? == true then "1" else "" end)",
+          @sh "vim_mode=\(.vim?.mode? | text)",
+          @sh "agent=\(.agent?.name? | text)",
+          @sh "session=\(.session_name? | text)",
+          @sh "session_id=\(.session_id? | str)",
+          @sh "repo_host=\(.workspace?.repo?.host? | str)",
+          @sh "repo_owner=\(.workspace?.repo?.owner? | str)",
+          @sh "repo_name=\(.workspace?.repo?.name? | str)",
+          @sh "worktree=\(.workspace?.git_worktree? // .worktree?.name? | text)",
+          @sh "ctx_pct=\($ctx.used_percentage? | int)",
+          @sh "ctx_used=\($ctx.total_input_tokens? | int)",
+          @sh "ctx_size=\($ctx.context_window_size? | int)",
+          @sh "five_pct=\($rl.five_hour?.used_percentage? | int)",
+          @sh "five_reset=\($rl.five_hour?.resets_at? | int)",
+          @sh "week_pct=\($rl.seven_day?.used_percentage? | int)",
+          @sh "week_reset=\($rl.seven_day?.resets_at? | int)",
+          @sh "spend_pct=\($spend.used_percentage? | int)",
+          @sh "spend_reset=\($spend.resets_at? | int)",
           @sh "spend_usd=\(
-              if $spend.used_usd != null and $spend.limit_usd != null
-              then "$\($spend.used_usd) / $\($spend.limit_usd)"
-              else "" end)",
-          @sh "pr_number=\(.pr.number | int)",
-          @sh "pr_url=\(.pr.url | str)",
-          @sh "pr_state=\(.pr.review_state | str)",
-          @sh "pr_kind=\(.pr.kind | str)",
-          @sh "cost_usd=\(.cost.total_cost_usd | money)",
-          @sh "cost_secs=\(.cost.total_duration_ms | if type == "number" then . / 1000 | floor else "" end)",
-          @sh "lines_added=\(.cost.total_lines_added | int)",
-          @sh "lines_removed=\(.cost.total_lines_removed | int)",
+              ($spend.used_usd? | usd) as $used | ($spend.limit_usd? | usd) as $limit
+              | if $used != "" and $limit != "" then "$\($used) / $\($limit)" else "" end)",
+          @sh "pr_number=\(.pr?.number? | int)",
+          @sh "pr_url=\(.pr?.url? | str)",
+          @sh "pr_state=\(.pr?.review_state? | str)",
+          @sh "pr_kind=\(.pr?.kind? | str)",
+          @sh "cost_usd=\(.cost?.total_cost_usd? | money)",
+          @sh "cost_secs=\(.cost?.total_duration_ms? | if safe then . / 1000 | floor else "" end)",
+          @sh "lines_added=\(.cost?.total_lines_added? | int)",
+          @sh "lines_removed=\(.cost?.total_lines_removed? | int)",
           @sh "cache_state=\(
-              if .prompt_cache.caching_observed != true then ""
-              elif .prompt_cache.warm == true then "warm"
+              if .prompt_cache?.caching_observed? != true then ""
+              elif .prompt_cache?.warm? == true then "warm"
               else "cold" end)",
-          @sh "cache_hit=\(.prompt_cache.hit_ratio | if type == "number" then . * 100 | round else "" end)",
-          @sh "cache_expires=\(.prompt_cache.expires_at | int)"
+          @sh "cache_hit=\(.prompt_cache?.hit_ratio? | if safe then . * 100 | int else "" end)",
+          @sh "cache_expires=\(.prompt_cache?.expires_at? | int)"
     '
     if [ $# -gt 0 ]; then
         assignments=$(printf '%s' "$1" | jq -r "$program" 2>/dev/null) || return 0
@@ -814,7 +863,7 @@ query_git() {
 
 # --- rendering --------------------------------------------------------------
 
-# render_location <level> [overflow]
+# render_location <level> [overflow] [directory overflow]
 # Level 0 is the full line; each next level gives up something to save width:
 #   1  drop the last commit
 #   2  shorten the path to its last two components
@@ -822,8 +871,10 @@ query_git() {
 #   4  truncate the branch name by <overflow> columns
 #   5  also drop the worktree name and the pull request
 #   6  also drop ahead/behind and stash
+# A directory overflow cuts the shortened path by that many columns, down to
+# DIR_MIN; fit_location uses it after level 6.
 render_location() {
-    local level=$1 overflow=${2:-0}
+    local level=$1 overflow=${2:-0} dir_overflow=${3:-0}
     local dir=${cwd:-?} branch=$git_branch
     dir=${dir//[[:cntrl:]]/ }
     if [ -n "${HOME:-}" ]; then
@@ -835,6 +886,30 @@ render_location() {
     if [ "$level" -ge 2 ]; then
         short_path "$dir" $((level >= 3 ? 1 : 2))
         dir=$REPLY
+    fi
+    # The last component alone is too wide: cut it, keeping its start.
+    visible_len "$dir"
+    if [ "$dir_overflow" -gt 0 ] && [ "$REPLY" -gt "$DIR_MIN" ]; then
+        local dir_width target keep
+        visible_len "$dir"
+        dir_width=$REPLY
+        target=$((dir_width - dir_overflow))
+        [ "$target" -lt "$DIR_MIN" ] && target=$DIR_MIN
+        # Start from the share of characters that should fit, then step: a
+        # mix of narrow and wide characters makes the first guess inexact.
+        keep=$((${#dir} * target / dir_width))
+        [ "$keep" -lt 1 ] && keep=1
+        while [ "$keep" -gt 1 ]; do
+            visible_len "${dir:0:keep}${G_ELLIPSIS}"
+            [ "$REPLY" -le "$target" ] && break
+            keep=$((keep - 1))
+        done
+        while :; do
+            visible_len "${dir:0:keep+1}${G_ELLIPSIS}"
+            [ "$REPLY" -le "$target" ] || break
+            keep=$((keep + 1))
+        done
+        dir="${dir:0:keep}${G_ELLIPSIS}"
     fi
     if [ "$level" -ge 4 ] && [ "$overflow" -gt 0 ]; then
         local keep=$((${#branch} - overflow - 1))
@@ -875,7 +950,7 @@ render_location() {
         [ "$git_stash" -gt 0 ] && out="${out} ${C_DIM}${G_STASH}${git_stash}${C_RESET}"
     fi
     [ -n "$worktree" ] && shown worktree && [ "$level" -lt 5 ] &&
-        out="${out} ${C_DIM}wt:${worktree}${C_RESET}"
+        out="${out} ${C_DIM}${L_WORKTREE}${worktree}${C_RESET}"
     if [ -n "$pr_number" ] && shown pr && [ "$level" -lt 5 ]; then
         render_pr
         out="${out} ${REPLY}"
@@ -919,7 +994,7 @@ render_pr() {
 
 # fit_location — the fullest line 1 that fits MAX_WIDTH
 fit_location() {
-    local level line overflow
+    local level line overflow branch_overflow=0
     for level in 0 1 2 3 4 5 6; do
         render_location "$level"
         [ "$MAX_WIDTH" -eq 0 ] && return
@@ -930,41 +1005,115 @@ fit_location() {
         # full branch: an overflow left over from the level before would cut
         # it by too little once the worktree and the PR are gone.
         if [ "$overflow" -gt 0 ] && [ "$level" -ge 4 ]; then
-            render_location "$level" "$overflow"
+            branch_overflow=$overflow
+            render_location "$level" "$branch_overflow"
             line=$REPLY
             visible_len "$line"
             overflow=$((REPLY - MAX_WIDTH))
         fi
         [ "$overflow" -le 0 ] && break
     done
+    if [ "$overflow" -gt 0 ]; then
+        render_location 6 "$branch_overflow" "$overflow"
+        line=$REPLY
+    fi
     REPLY=$line
 }
 
-# join_fit [use head forms] — join SEGMENTS with the separator, dropping
-# segments from the end until the line fits MAX_WIDTH. The first segment
-# always stays; on line 2 it may still shrink through HEAD_FORMS.
-join_fit() {
-    local count=${#SEGMENTS[@]} line i
-    while :; do
-        line=${SEGMENTS[0]}
-        for ((i = 1; i < count; i++)); do
-            line="${line}${SEP}${SEGMENTS[i]}"
+# join_line <count> — the first <count> SEGMENTS joined with the separator
+join_line() {
+    local line=${SEGMENTS[0]} i
+    for ((i = 1; i < $1; i++)); do
+        line="${line}${SEP}${SEGMENTS[i]}"
+    done
+    REPLY=$line
+}
+
+# fits <line> — the line is no wider than MAX_WIDTH; the line stays in REPLY
+fits() {
+    visible_len "$1"
+    local width=$REPLY
+    REPLY=$1
+    [ "$width" -le "$MAX_WIDTH" ]
+}
+
+# shrink_context <count> <use head forms> — before the context segment (the
+# last of <count>) is dropped: without the token count, then (on line 2)
+# with the model segment shedding agent, fast mode and effort, then with a
+# shorter bar, down to 5 cells. Succeeds with the line in REPLY.
+shrink_context() {
+    local count=$1 head=${SEGMENTS[0]} form width
+    context_form 0 "$BAR_WIDTH"
+    SEGMENTS[CTX_INDEX]=$REPLY
+    join_line "$count"
+    fits "$REPLY" && return 0
+    if [ "$2" -eq 1 ]; then
+        for form in "${HEAD_FORMS[@]:1}"; do
+            SEGMENTS[0]=$form
+            join_line "$count"
+            fits "$REPLY" && return 0
         done
+    fi
+    visible_len "$REPLY"
+    width=$((BAR_WIDTH - (REPLY - MAX_WIDTH)))
+    if [ "$width" -ge 5 ]; then
+        context_form 0 "$width"
+        SEGMENTS[CTX_INDEX]=$REPLY
+        join_line "$count"
+        fits "$REPLY" && return 0
+    fi
+    SEGMENTS[0]=$head
+    return 1
+}
+
+# join_fit [use head forms] — join SEGMENTS with the separator, dropping
+# segments from the end until the line fits MAX_WIDTH. The context segment
+# (CTX_INDEX) shrinks before it is dropped. The first segment always stays;
+# on line 2 it may still shrink through HEAD_FORMS.
+join_fit() {
+    local count=${#SEGMENTS[@]} line
+    while :; do
+        join_line "$count"
+        line=$REPLY
         if [ "$MAX_WIDTH" -eq 0 ] || [ "$count" -le 1 ]; then
             break
         fi
-        visible_len "$line"
-        [ "$REPLY" -le "$MAX_WIDTH" ] && break
+        fits "$line" && break
+        if [ "$((count - 1))" -eq "$CTX_INDEX" ] && shrink_context "$count" "${1:-0}"; then
+            return 0
+        fi
         count=$((count - 1))
     done
     # Down to the first segment and still too wide: try its shorter forms.
-    if [ "${1:-0}" -eq 1 ] && [ "$MAX_WIDTH" -gt 0 ] && [ "$count" -le 1 ]; then
-        for line in "${HEAD_FORMS[@]}"; do
-            visible_len "$line"
-            [ "$REPLY" -le "$MAX_WIDTH" ] && break
-        done
+    if [ "$MAX_WIDTH" -gt 0 ] && [ "$count" -le 1 ] && ! fits "$line"; then
+        if [ "${1:-0}" -eq 1 ]; then
+            for line in "${HEAD_FORMS[@]}"; do
+                visible_len "$line"
+                [ "$REPLY" -le "$MAX_WIDTH" ] && break
+            done
+        elif [ "$CTX_INDEX" -eq 0 ]; then
+            # The 5-cell bar is the shortest form, even if it does not fit.
+            shrink_context 1 0 || context_form 0 5
+            line=$REPLY
+        elif [ "$FIRST_NAME" = session ]; then
+            shrink_session
+            line=$REPLY
+        fi
     fi
     REPLY=$line
+}
+
+# shrink_session — the session segment cut with an ellipsis to MAX_WIDTH
+shrink_session() {
+    local name=$session keep
+    keep=$((MAX_WIDTH - 1))
+    while [ "$keep" -gt 0 ]; do
+        name="${session:0:keep}${G_ELLIPSIS}"
+        visible_len "$name"
+        [ "$REPLY" -le "$MAX_WIDTH" ] && break
+        keep=$((keep - 1))
+    done
+    REPLY="${C_DIM}${name}${C_RESET}"
 }
 
 # head_form <with effort> <with fast> <with agent> — the model segment
@@ -992,6 +1141,20 @@ render_heads() {
     head_form 0 0 0 && HEAD_FORMS+=("$REPLY")
 }
 
+# context_form <with tokens> <bar width> — the context segment
+context_form() {
+    local out
+    bar "$ctx_pct" "$2"
+    out="${C_DIM}${L_CTX}${C_RESET} ${REPLY} ${C_TEXT}${ctx_pct}%"
+    if [ "$1" -eq 1 ] && [ -n "$ctx_used" ] && [ -n "$ctx_size" ] && shown tokens; then
+        fmt_tokens "$ctx_used"
+        out="${out} (${REPLY} / "
+        fmt_tokens "$ctx_size"
+        out="${out}${REPLY})"
+    fi
+    REPLY="${out}${C_RESET}"
+}
+
 # render_segment <name> — one line-2 segment in REPLY, empty when it has no
 # data or is hidden
 render_segment() {
@@ -1000,15 +1163,7 @@ render_segment() {
     case $1 in
         context)
             [ -n "$ctx_pct" ] && shown context || return 0
-            bar "$ctx_pct"
-            out="${C_DIM}${L_CTX}${C_RESET} ${REPLY} ${C_TEXT}${ctx_pct}%"
-            if [ -n "$ctx_used" ] && [ -n "$ctx_size" ] && shown tokens; then
-                fmt_tokens "$ctx_used"
-                out="${out} (${REPLY} / "
-                fmt_tokens "$ctx_size"
-                out="${out}${REPLY})"
-            fi
-            REPLY="${out}${C_RESET}"
+            context_form 1 "$BAR_WIDTH"
             ;;
         cost)
             shown cost && render_cost
@@ -1042,9 +1197,13 @@ render_lines() {
         else
             SEGMENTS=()
         fi
+        CTX_INDEX=-1 FIRST_NAME=""
         for name in ${LAYOUT_GROUPS[g]}; do
             render_segment "$name"
-            [ -n "$REPLY" ] && SEGMENTS+=("$REPLY")
+            [ -n "$REPLY" ] || continue
+            [ "$name" = context ] && CTX_INDEX=${#SEGMENTS[@]}
+            [ "${#SEGMENTS[@]}" -eq 0 ] && FIRST_NAME=$name
+            SEGMENTS+=("$REPLY")
         done
         [ "${#SEGMENTS[@]}" -gt 0 ] || continue
         join_fit $((g == 0 ? 1 : 0))
@@ -1063,6 +1222,7 @@ compact_limit() {
 # the location (last path component, branch and working tree state) │ model
 # and effort │ context % │ limit percentages. Segments drop from the end.
 render_compact() {
+    CTX_INDEX=-1 FIRST_NAME=location
     render_location 6
     SEGMENTS=("$REPLY")
     head_form 1 0 0
@@ -1077,6 +1237,18 @@ render_compact() {
         if shown spend; then compact_limit "$L_SPEND" "$spend_pct"; fi
     fi
     join_fit 0
+    # Only the location is left and it is still too wide: cut the branch, as
+    # line 1 does.
+    if [ "$MAX_WIDTH" -gt 0 ] && ! fits "$REPLY"; then
+        visible_len "$REPLY"
+        local branch_overflow=$((REPLY - MAX_WIDTH))
+        render_location 6 "$branch_overflow"
+        if ! fits "$REPLY"; then
+            visible_len "$REPLY"
+            render_location 6 "$branch_overflow" $((REPLY - MAX_WIDTH))
+        fi
+    fi
+    return 0
 }
 
 # render_cache — "Cache 91% · 19:30" while the prompt cache is warm (hit ratio
@@ -1117,29 +1289,30 @@ render_cost() {
     REPLY=$out
 }
 
-# render_limit <level> <label> <percent> <reset epoch> [note] [bar width]
-# Level 0 is the full row; level 1 drops the note, level 2 the reset time.
+# render_limit <level> <label> <percent> <reset text> [note] [bar width]
 render_limit() {
     local level=$1 label=$2 pct=$3 reset=$4 note=${5:-} width=${6:-$BAR_WIDTH} out pad
     # Padded by hand: printf counts bytes, and the labels can be Cyrillic.
     printf -v pad '%*s' $((LIMIT_LABEL_WIDTH - ${#label})) ''
     bar "$pct" "$width"
     out="${C_DIM}${label}${pad}${C_RESET}${REPLY} ${C_DIM}${pct}%${C_RESET}"
-    if [ -n "$reset" ] && [ "$level" -lt 2 ]; then
-        fmt_reset "$reset"
-        [ -n "$REPLY" ] && out="${out}  ${C_DIM}${REPLY}${C_RESET}"
-    fi
+    [ -n "$reset" ] && [ "$level" -lt 2 ] && out="${out}  ${C_DIM}${reset}${C_RESET}"
     [ -n "$note" ] && [ "$level" -lt 1 ] && out="${out}  ${C_DIM}${note}${C_RESET}"
     REPLY=$out
 }
 
 # fit_limit <label> <percent> <reset epoch> [note] — the fullest limit row
 # that fits MAX_WIDTH: drop the note, then the reset time, then shorten the
-# bar down to 5 cells.
+# bar down to 5 cells. The reset time is formatted once: on bash 3.2 that
+# costs a date process.
 fit_limit() {
-    local level line width
+    local level line width reset=""
+    if [ -n "$3" ]; then
+        fmt_reset "$3"
+        reset=$REPLY
+    fi
     for level in 0 1 2; do
-        render_limit "$level" "$@"
+        render_limit "$level" "$1" "$2" "$reset" "${4:-}"
         [ "$MAX_WIDTH" -eq 0 ] && return
         line=$REPLY
         visible_len "$line"
@@ -1150,7 +1323,7 @@ fit_limit() {
     done
     width=$((BAR_WIDTH - (REPLY - MAX_WIDTH)))
     [ "$width" -lt 5 ] && width=5
-    render_limit 2 "$1" "$2" "$3" "${4:-}" "$width"
+    render_limit 2 "$1" "$2" "$reset" "${4:-}" "$width"
 }
 
 # --- main -------------------------------------------------------------------
@@ -1175,6 +1348,9 @@ main() {
     fi
 
     if [ "$demo" -eq 1 ]; then
+        # demo_json runs in a subshell: without this its NOW would be lost and
+        # read again later, a second off when the clock ticks in between.
+        set_now
         read_input "$(demo_json)"
         reset_git
         shown git && demo_git

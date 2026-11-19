@@ -4,6 +4,28 @@
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-11-19
+
+### Изменено
+- На узком терминале шкала контекста остаётся дольше: прежде чем убрать её, строка 2 сначала прячет счётчик токенов, затем агента, `fast` и effort у модели, затем укорачивает шкалу до 5 клеток. Раньше шкала пропадала первой, а подписи модели оставались ([#50](https://github.com/foxtertime/claude-statusline/issues/50)).
+- Подсчёт ширины длинного текста на китайском, японском и корейском ускорен: путь и имя сессии из 200 иероглифов отрисовываются за 36 мс вместо 150 ([#57](https://github.com/foxtertime/claude-statusline/issues/57)).
+- На bash 3.2 (macOS) узкая строка лимита больше не вызывает `date` повторно: время сброса форматируется один раз на строку ([#54](https://github.com/foxtertime/claude-statusline/issues/54)).
+- Переустановка сохраняет опции, заданные прямо в команде (`"command": "STATUSLINE_LANG=en ~/.claude/statusline.sh"`), а `--check` больше не считает такую команду чужой ([#48](https://github.com/foxtertime/claude-statusline/issues/48)).
+- Установщик сохраняет исходный `settings.json` в `settings.json.orig` при первом изменении и больше его не перезаписывает; `settings.json.bak`, как и раньше, — версия перед последним запуском ([#47](https://github.com/foxtertime/claude-statusline/issues/47)).
+
+### Исправлено
+- Строка 1 больше не вылезает за ширину терминала, когда слишком длинное имя последней папки: оно обрезается многоточием, а ссылка `file://` по-прежнему ведёт на полный путь ([#89](https://github.com/foxtertime/claude-statusline/issues/89)).
+- `--demo` с `STATUSLINE_RESET=relative` иногда показывал время на минуту меньше (`через 2 ч 9 мин`): текущее время читалось дважды ([#92](https://github.com/foxtertime/claude-statusline/issues/92)).
+- Первый сегмент дополнительных строк `STATUSLINE_LAYOUT` и строка `compact` больше не вылезают за ширину терминала: шкала контекста укорачивается, имя сессии обрезается, а в `compact` — имя ветки ([#51](https://github.com/foxtertime/claude-statusline/issues/51)).
+- Эмодзи среди обычных символов (`⚡`, `✅`, `⌚`, `⭐`) и в блоке U+1F000–1F2FF (`🀄`, `🈁`) считаются за две колонки, как их показывает терминал: строки с ними в имени сессии, ветке или пути больше не обрезаются ([#56](https://github.com/foxtertime/claude-statusline/issues/56)).
+- Установщик больше не заменяет `settings.json`, который является символической ссылкой (например, из менеджера dotfiles), обычным файлом и сохраняет его права доступа ([#46](https://github.com/foxtertime/claude-statusline/issues/46)).
+- `install.sh --padding 00` и `--refresh 00` теперь считаются нулём и убирают ключ, как `0`; ведущие нули в числах отбрасываются ([#49](https://github.com/foxtertime/claude-statusline/issues/49)).
+- `--demo` больше не показывает `?` и пустые сегменты, когда в `HOME` есть кавычка или обратная косая черта ([#53](https://github.com/foxtertime/claude-statusline/issues/53)).
+- Имена в `STATUSLINE_LAYOUT` больше не раскрываются как шаблоны файлов: `*` или `?` в раскладке не зависят от содержимого текущего каталога ([#52](https://github.com/foxtertime/claude-statusline/issues/52)).
+- Огромные числа во входе (`1e300`) больше не завершают скрипт с ошибкой и обрезанным выводом: значения больше 10¹⁵ по модулю отбрасываются ([#45](https://github.com/foxtertime/claude-statusline/issues/45)).
+- Поле входа неожиданного типа (например, строка вместо объекта `model` или `context_window`) больше не стирает весь статуслайн: пропадает только оно само ([#44](https://github.com/foxtertime/claude-statusline/issues/44)).
+- Суммы `rate_limits.spend_limit` (`used_usd`, `limit_usd`) округляются до центов (`$0.30` вместо `$0.30000000000000004`), а не-числа отбрасываются: управляющие последовательности из этих полей больше не попадают в терминал ([#43](https://github.com/foxtertime/claude-statusline/issues/43)).
+
 ## [1.4.0] — 2026-11-19
 
 ### Добавлено
@@ -101,7 +123,8 @@
 - Установщик `install.sh`: копирует скрипт в `~/.claude/statusline.sh`, прописывает `statusLine` в `settings.json` с бэкапом; `git` — опциональная зависимость.
 - Флаг `--version` / `-v` у скрипта.
 
-[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/foxtertime/claude-statusline/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/foxtertime/claude-statusline/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/foxtertime/claude-statusline/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/foxtertime/claude-statusline/compare/v1.1.1...v1.2.0

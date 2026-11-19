@@ -33,7 +33,11 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   `settings.json`, keeps `STATUSLINE_PADDING` in sync with
   `statusLine.padding`; `--check` diagnoses, `--uninstall` reverses all of it.
   A new `STATUSLINE_*` option must be added to `KNOWN_OPTIONS` there.
-- `tests/run.sh` — black-box tests for both scripts.
+- `tests/` — black-box tests: `statusline.sh` and `install.sh` hold the
+  tests for each script, `lib.sh` the isolated environment and the helpers
+  (`t`, `equals`, `contains`, `render`…). `run.sh` sources all three and
+  prints one total; it stays the entry point (CI, the Makefile and the
+  installer's repo-copy check rely on its path). Each part also runs alone.
 - `.githooks/commit-msg`, `.github/workflows/` — commit lint, CI, release.
   Release assets are flat (`statusline.sh`, `install.sh`, `SHA256SUMS`): the
   downloaded installer and its URLs depend on those names, not on `src/`.
@@ -141,7 +145,8 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   tests, build JSON with
   `printf` and a single-quoted format — `\"` inside `"$(...)"` is parsed
   differently by bash 3.2.
-- A behavior change needs a test in `tests/run.sh` and a line under
+- A behavior change needs a test in `tests/statusline.sh` or
+  `tests/install.sh` and a line under
   `[Unreleased]` in `CHANGELOG.md` (Russian, Keep a Changelog format).
 - Pushing feature branches, opening and merging their PRs and closing their
   issues is part of doing the work. Do not tag or publish a release without

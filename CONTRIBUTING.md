@@ -10,7 +10,7 @@ make check   # shellcheck + shfmt + тесты; должно проходить 
 make fmt     # отформатировать код
 ```
 
-Тесты лежат в `tests/run.sh` и не требуют ничего, кроме bash, jq и git. Любое изменение поведения сопровождается тестом.
+Тесты лежат в `tests/` и не требуют ничего, кроме bash, jq и git: `./tests/run.sh` запускает все, `./tests/statusline.sh` и `./tests/install.sh` — по отдельности. Любое изменение поведения сопровождается тестом.
 
 ## Структура
 
@@ -18,7 +18,9 @@ make fmt     # отформатировать код
 | --- | --- |
 | `src/statusline.sh` | Сам статуслайн — единственный файл, который ставится пользователю |
 | `src/install.sh` | Установщик: установка, настройки, `--check`, `--uninstall` |
-| `tests/run.sh` | Тесты обоих скриптов |
+| `tests/run.sh` | Запуск всех тестов с общим итогом |
+| `tests/statusline.sh`, `tests/install.sh` | Тесты статуслайна и установщика |
+| `tests/lib.sh` | Окружение тестов и проверки (`equals`, `contains`, `render`…) |
 | `.github/workflows/` | CI (`ci.yml`) и выпуск релиза (`release.yml`) |
 | `.githooks/commit-msg` | Проверка Conventional Commits |
 
@@ -40,6 +42,10 @@ make fmt     # отформатировать код
 
 Любая работа начинается с issue и попадает в `develop` или `main` только через pull request — это относится и к feature-, и к release-, и к hotfix-веткам.
 
+Для ошибок и предложений есть шаблоны (`.github/ISSUE_TEMPLATE/`): шаблон ошибки просит входной JSON, ширину, опции, ОС, версию bash и вывод `install.sh --check`, шаблон предложения добавляет стандартный чек-лист. Для мелких задач и chore можно открыть пустую issue.
+
+Об уязвимости — не в issue, а приватно, как описано в [SECURITY.md](SECURITY.md).
+
 ```bash
 gh issue create --assignee @me               # или найти существующую: gh issue list,
                                              # и взять её: gh issue edit <номер> --add-assignee @me
@@ -58,6 +64,7 @@ gh issue close <номер> --comment "Сделано в #<номер PR>"
 - Issue, взятая в работу, и открытый pull request назначаются на себя (`--assignee @me`).
 - Если в issue есть чек-лист (`- [ ]`), каждый пункт отмечается, как только сделан (`gh issue edit <номер> --body-file …`). К слиянию pull request'а все пункты, которые он закрывает, должны быть отмечены.
 - `Closes #N` закрывает issue автоматически лишь при слиянии в `main`, поэтому после слияния в `develop` issue закрывается вручную.
+- Dependabot раз в неделю открывает pull request в `develop` с обновлениями GitHub Actions (`.github/dependabot.yml`, заголовки `ci: bump …`). Они проходят те же проверки и сливаются так же — merge-коммитом при зелёном CI.
 
 ## Коммиты — Conventional Commits
 

@@ -1,0 +1,28 @@
+name: Предложение
+description: Новая возможность или изменение поведения
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема
+      description: Что сейчас неудобно или чего не хватает и в какой ситуации.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предложение
+      description: Как это могло бы работать; если меняется вывод — пример строки.
+    validations:
+      required: true
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Чек-лист
+      description: Пункты отмечаются по ходу работы; лишние можно удалить.
+      value: |
+        - [ ] Изменение
+        - [ ] Тест в `tests/statusline.sh` или `tests/install.sh`
+        - [ ] Строка в `[Unreleased]` в `CHANGELOG.md`
+        - [ ] Таблицы README — для новой опции или сегмента

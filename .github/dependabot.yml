@@ -1,0 +1,17 @@
+# Обновления GitHub Actions. Pull request'ы идут в develop, как и любые другие
+# изменения; префикс ci даёт заголовки вида «ci: bump actions/checkout from 4
+# to 5», которые проходят проверку Conventional Commits (job commits).
+# Dependabot читает этот файл из ветки по умолчанию (main), поэтому он
+# заработает после ближайшего релиза.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns: ['*']
