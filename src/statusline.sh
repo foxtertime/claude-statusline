@@ -1054,13 +1054,35 @@ join_fit() {
         count=$((count - 1))
     done
     # Down to the first segment and still too wide: try its shorter forms.
-    if [ "${1:-0}" -eq 1 ] && [ "$MAX_WIDTH" -gt 0 ] && [ "$count" -le 1 ]; then
-        for line in "${HEAD_FORMS[@]}"; do
-            visible_len "$line"
-            [ "$REPLY" -le "$MAX_WIDTH" ] && break
-        done
+    if [ "$MAX_WIDTH" -gt 0 ] && [ "$count" -le 1 ] && ! fits "$line"; then
+        if [ "${1:-0}" -eq 1 ]; then
+            for line in "${HEAD_FORMS[@]}"; do
+                visible_len "$line"
+                [ "$REPLY" -le "$MAX_WIDTH" ] && break
+            done
+        elif [ "$CTX_INDEX" -eq 0 ]; then
+            # The 5-cell bar is the shortest form, even if it does not fit.
+            shrink_context 1 0 || context_form 0 5
+            line=$REPLY
+        elif [ "$FIRST_NAME" = session ]; then
+            shrink_session
+            line=$REPLY
+        fi
     fi
     REPLY=$line
+}
+
+# shrink_session — the session segment cut with an ellipsis to MAX_WIDTH
+shrink_session() {
+    local name=$session keep
+    keep=$((MAX_WIDTH - 1))
+    while [ "$keep" -gt 0 ]; do
+        name="${session:0:keep}${G_ELLIPSIS}"
+        visible_len "$name"
+        [ "$REPLY" -le "$MAX_WIDTH" ] && break
+        keep=$((keep - 1))
+    done
+    REPLY="${C_DIM}${name}${C_RESET}"
 }
 
 # head_form <with effort> <with fast> <with agent> — the model segment
@@ -1144,11 +1166,12 @@ render_lines() {
         else
             SEGMENTS=()
         fi
-        CTX_INDEX=-1
+        CTX_INDEX=-1 FIRST_NAME=""
         for name in ${LAYOUT_GROUPS[g]}; do
             render_segment "$name"
             [ -n "$REPLY" ] || continue
             [ "$name" = context ] && CTX_INDEX=${#SEGMENTS[@]}
+            [ "${#SEGMENTS[@]}" -eq 0 ] && FIRST_NAME=$name
             SEGMENTS+=("$REPLY")
         done
         [ "${#SEGMENTS[@]}" -gt 0 ] || continue
@@ -1168,7 +1191,7 @@ compact_limit() {
 # the location (last path component, branch and working tree state) │ model
 # and effort │ context % │ limit percentages. Segments drop from the end.
 render_compact() {
-    CTX_INDEX=-1
+    CTX_INDEX=-1 FIRST_NAME=location
     render_location 6
     SEGMENTS=("$REPLY")
     head_form 1 0 0
@@ -1183,6 +1206,13 @@ render_compact() {
         if shown spend; then compact_limit "$L_SPEND" "$spend_pct"; fi
     fi
     join_fit 0
+    # Only the location is left and it is still too wide: cut the branch, as
+    # line 1 does.
+    if [ "$MAX_WIDTH" -gt 0 ] && ! fits "$REPLY"; then
+        visible_len "$REPLY"
+        render_location 6 $((REPLY - MAX_WIDTH))
+    fi
+    return 0
 }
 
 # render_cache — "Cache 91% · 19:30" while the prompt cache is warm (hit ratio
