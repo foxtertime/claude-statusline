@@ -938,6 +938,24 @@ out=$(install --check)
 equals "$?" "1"
 contains "$out" "не валидный JSON"
 
+t "install: переустановка сохраняет опции перед командой"
+export CLAUDE_CONFIG_DIR="$TMP/prefixed"
+settings="$CLAUDE_CONFIG_DIR/settings.json"
+install >/dev/null
+cmd=$(jq -r .statusLine.command "$settings")
+jq --arg c "STATUSLINE_LANG=en $cmd" '.statusLine.command = $c' "$settings" >"$settings.tmp" && mv "$settings.tmp" "$settings"
+install --refresh 5 >/dev/null
+equals "$(jq -r .statusLine.command "$settings")" "STATUSLINE_LANG=en $cmd"
+out=$(install --check)
+equals "$?" "0"
+lacks "$out" "команда отличается"
+jq '.statusLine.command = "other.sh"' "$settings" >"$settings.tmp" && mv "$settings.tmp" "$settings"
+install >/dev/null
+equals "$(jq -r .statusLine.command "$settings")" "$cmd"
+jq --arg c "STATUSLINE_LANG=en $cmd.old" '.statusLine.command = $c' "$settings" >"$settings.tmp" && mv "$settings.tmp" "$settings"
+install >/dev/null
+equals "$(jq -r .statusLine.command "$settings")" "$cmd"
+
 t "install: --set знает все опции статуслайна"
 # shellcheck disable=SC2016  # ищем текст «${STATUSLINE_…» в скрипте
 read_options=$(grep -o '\${STATUSLINE_[A-Z_]*' "$SCRIPT" | sed 's/^\${STATUSLINE_//' | grep -v '^PADDING$' | sort -u)
