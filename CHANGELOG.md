@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-11-19
+
 ### Изменено
 - На узком терминале шкала контекста остаётся дольше: прежде чем убрать её, строка 2 сначала прячет счётчик токенов, затем агента, `fast` и effort у модели, затем укорачивает шкалу до 5 клеток. Раньше шкала пропадала первой, а подписи модели оставались ([#50](https://github.com/foxtertime/claude-statusline/issues/50)).
 - Подсчёт ширины длинного текста на китайском, японском и корейском ускорен: путь и имя сессии из 200 иероглифов отрисовываются за 36 мс вместо 150 ([#57](https://github.com/foxtertime/claude-statusline/issues/57)).
@@ -121,7 +123,8 @@
 - Установщик `install.sh`: копирует скрипт в `~/.claude/statusline.sh`, прописывает `statusLine` в `settings.json` с бэкапом; `git` — опциональная зависимость.
 - Флаг `--version` / `-v` у скрипта.
 
-[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/foxtertime/claude-statusline/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/foxtertime/claude-statusline/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/foxtertime/claude-statusline/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/foxtertime/claude-statusline/compare/v1.1.1...v1.2.0
