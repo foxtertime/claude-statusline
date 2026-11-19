@@ -137,6 +137,25 @@ t "null-поля в начале сессии"
 out=$(render '{"model":{"display_name":"Opus"},"context_window":{"used_percentage":null,"context_window_size":200000,"current_usage":null}}')
 equals "$(line 2 "$out")" "Opus (200K)"
 
+t "поле неверного типа пропадает само, остальные сегменты остаются"
+typed='{"model":{"display_name":"M"},"context_window":{"used_percentage":50},"cost":{"total_cost_usd":1},"rate_limits":{"five_hour":{"used_percentage":10}}}'
+for field in model effort workspace context_window rate_limits cost pr prompt_cache vim agent; do
+    out=$(render "$(printf '%s' "$typed" | jq -c --arg f "$field" '. + {($f): "x"}')")
+    case $field in
+        model) contains "$out" "? │ Ctx ━━━━━━━━━━────────── 50%" ;;
+        context_window) equals "$(line 2 "$out")" "M" ;;
+        *) contains "$out" "M │ Ctx ━━━━━━━━━━────────── 50%" ;;
+    esac
+    [ "$field" = rate_limits ] || contains "$out" "Current "
+done
+out=$(render '{"rate_limits":{"five_hour":"x","seven_day":{"used_percentage":3}}}')
+equals "$(line 3 "$out")" "Weekly  ━─────────────────── 3%"
+for doc in '[]' '"x"' '42'; do
+    out=$(render "$doc")
+    equals "$?" "0"
+    contains "$out" "[no git]"
+done
+
 t "устаревший cwd используется, если нет workspace.current_dir"
 out=$(render '{"cwd":"/legacy"}')
 contains "$out" "/legacy │"
