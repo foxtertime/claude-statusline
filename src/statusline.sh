@@ -167,12 +167,18 @@ if [ "$LANG_CODE" = ru ]; then
     L_CURRENT="Сейчас" L_WEEKLY="Неделя" L_SPEND="Расход"
     L_APPROVED="одобрен" L_CHANGES="правки" L_PENDING="ждёт" L_DRAFT="черновик"
     L_5H="5ч" L_7D="7д"
+    L_WORKTREE="wt:" L_IN="через"
+    # Units of time: "2 ч 10 мин"
+    L_DAYS="д" L_HOURS="ч" L_MINUTES="мин" L_SECONDS="с" L_UNIT_SEP=" "
 else
     L_CTX="Ctx" L_CACHE="Cache" L_COLD="cold" L_WARM="warm"
     L_FAST="fast" L_CLEAN="[clean]" L_NO_GIT="[no git]"
     L_CURRENT="Current" L_WEEKLY="Weekly" L_SPEND="Spend"
     L_APPROVED="approved" L_CHANGES="changes" L_PENDING="pending" L_DRAFT="draft"
     L_5H="5h" L_7D="7d"
+    L_WORKTREE="wt:" L_IN="in"
+    # Units of time: "2h 10m"
+    L_DAYS="d" L_HOURS="h" L_MINUTES="m" L_SECONDS="s" L_UNIT_SEP=""
 fi
 
 # Limit labels are padded to the longest one plus a space.
@@ -461,32 +467,18 @@ fmt_tokens() {
 
 # fmt_duration <seconds> — "45s", "38m", "1h 5m", "3d 4h" (ru: "38 мин", "1 ч 5 мин")
 fmt_duration() {
-    local s=$1 d h m
+    local s=$1 d h m u=$L_UNIT_SEP
     d=$((s / 86400)) h=$((s % 86400 / 3600)) m=$((s % 3600 / 60))
-    if [ "$LANG_CODE" = ru ]; then
-        if [ "$d" -gt 0 ]; then
-            REPLY="$d д"
-            [ "$h" -gt 0 ] && REPLY="$REPLY $h ч"
-        elif [ "$h" -gt 0 ]; then
-            REPLY="$h ч"
-            [ "$m" -gt 0 ] && REPLY="$REPLY $m мин"
-        elif [ "$m" -gt 0 ]; then
-            REPLY="$m мин"
-        else
-            REPLY="$s с"
-        fi
+    if [ "$d" -gt 0 ]; then
+        REPLY="${d}${u}${L_DAYS}"
+        [ "$h" -gt 0 ] && REPLY="$REPLY ${h}${u}${L_HOURS}"
+    elif [ "$h" -gt 0 ]; then
+        REPLY="${h}${u}${L_HOURS}"
+        [ "$m" -gt 0 ] && REPLY="$REPLY ${m}${u}${L_MINUTES}"
+    elif [ "$m" -gt 0 ]; then
+        REPLY="${m}${u}${L_MINUTES}"
     else
-        if [ "$d" -gt 0 ]; then
-            REPLY="${d}d"
-            [ "$h" -gt 0 ] && REPLY="$REPLY ${h}h"
-        elif [ "$h" -gt 0 ]; then
-            REPLY="${h}h"
-            [ "$m" -gt 0 ] && REPLY="$REPLY ${m}m"
-        elif [ "$m" -gt 0 ]; then
-            REPLY="${m}m"
-        else
-            REPLY="${s}s"
-        fi
+        REPLY="${s}${u}${L_SECONDS}"
     fi
 }
 
@@ -495,11 +487,11 @@ fmt_remaining() {
     set_now
     local left=$(($1 - NOW))
     if [ "$left" -lt 60 ]; then
-        if [ "$LANG_CODE" = ru ]; then REPLY="<1 мин"; else REPLY="<1m"; fi
+        REPLY="<1${L_UNIT_SEP}${L_MINUTES}"
     else
         fmt_duration "$left"
     fi
-    if [ "$LANG_CODE" = ru ]; then REPLY="через $REPLY"; else REPLY="in $REPLY"; fi
+    REPLY="$L_IN $REPLY"
 }
 
 # fmt_reset <epoch> — when a window resets. Absolute: "19:30" if today,
@@ -893,7 +885,7 @@ render_location() {
         [ "$git_stash" -gt 0 ] && out="${out} ${C_DIM}${G_STASH}${git_stash}${C_RESET}"
     fi
     [ -n "$worktree" ] && shown worktree && [ "$level" -lt 5 ] &&
-        out="${out} ${C_DIM}wt:${worktree}${C_RESET}"
+        out="${out} ${C_DIM}${L_WORKTREE}${worktree}${C_RESET}"
     if [ -n "$pr_number" ] && shown pr && [ "$level" -lt 5 ]; then
         render_pr
         out="${out} ${REPLY}"
