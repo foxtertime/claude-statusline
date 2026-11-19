@@ -156,6 +156,17 @@ for doc in '[]' '"x"' '42'; do
     contains "$out" "[no git]"
 done
 
+t "огромные числа отбрасываются, скрипт завершается с 0"
+huge='{"context_window":{"used_percentage":V,"total_input_tokens":V,"context_window_size":V},"cost":{"total_cost_usd":V,"total_duration_ms":V,"total_lines_added":V,"total_lines_removed":V},"prompt_cache":{"caching_observed":true,"warm":true,"hit_ratio":V,"expires_at":V},"rate_limits":{"five_hour":{"used_percentage":V,"resets_at":V},"seven_day":{"used_percentage":V,"resets_at":V},"spend_limit":{"used_percentage":V,"resets_at":V,"used_usd":V,"limit_usd":V}},"pr":{"number":V}}'
+for v in 1e300 -1e300 1e15; do
+    out=$(render "${huge//V/$v}")
+    equals "$?" "0"
+    equals "$out" "? │ [no git]
+? │ Cache warm"
+    out=$(printf '%s' "${huge//V/$v}" | _STATUSLINE_FORCE_DATE=1 "$BASH" "$SCRIPT")
+    equals "$?" "0"
+done
+
 t "устаревший cwd используется, если нет workspace.current_dir"
 out=$(render '{"cwd":"/legacy"}')
 contains "$out" "/legacy │"
