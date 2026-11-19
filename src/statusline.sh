@@ -31,7 +31,7 @@
 
 set -u
 
-VERSION="1.3.0"
+VERSION="1.4.0"
 
 SUBJECT_MAX=40
 SESSION_MAX=30
@@ -364,6 +364,41 @@ link() {
     case $url in
         https://* | http://*) REPLY="${ESC}]8;;${url}${BEL}${2}${ESC}]8;;${BEL}" ;;
     esac
+}
+
+# dir_url — file:// URL of the working directory for the line 1 link, in
+# DIR_URL; empty when links are off or the path is not absolute. Computed once:
+# render_location runs for every fitting level. Bytes outside the unreserved
+# set are percent-encoded, so control characters cannot end the escape early.
+DIR_URL=""
+DIR_URL_DONE=0
+dir_url() {
+    [ "$DIR_URL_DONE" -eq 1 ] && return 0
+    DIR_URL_DONE=1
+    [ "$LINKS" -eq 1 ] || return 0
+    local path=$cwd host=${HOSTNAME:-}
+    case $path in /*) ;; *) return 0 ;; esac
+    # The host lets a terminal tell a remote (SSH) path from a local one.
+    case $host in *[!A-Za-z0-9.-]*) host="" ;; esac
+    case $path in
+        *[!A-Za-z0-9._~/-]*)
+            local LC_ALL=C
+            local i c out=""
+            for ((i = 0; i < ${#path}; i++)); do
+                c=${path:i:1}
+                case $c in
+                    [A-Za-z0-9._~/-]) out="${out}${c}" ;;
+                    *)
+                        byte_at "$path" "$i"
+                        printf -v c '%%%02X' "$REPLY"
+                        out="${out}${c}"
+                        ;;
+                esac
+            done
+            path=$out
+            ;;
+    esac
+    DIR_URL="file://${host}${path}"
 }
 
 # short_path <path> <keep> — "…/proj/app": the last <keep> components
@@ -806,6 +841,8 @@ render_location() {
         [ "$keep" -lt "$BRANCH_MIN" ] && keep=$BRANCH_MIN
         [ "$keep" -lt "${#branch}" ] && branch="${branch:0:keep}${G_ELLIPSIS}"
     fi
+    dir_url
+    [ -n "$DIR_URL" ] && dir="${ESC}]8;;${DIR_URL}${BEL}${dir}${ESC}]8;;${BEL}"
     local out="${C_DIR}${dir}${C_RESET}"
     if ! shown git; then
         REPLY=$out
@@ -882,13 +919,22 @@ render_pr() {
 
 # fit_location — the fullest line 1 that fits MAX_WIDTH
 fit_location() {
-    local level line overflow=0
+    local level line overflow
     for level in 0 1 2 3 4 5 6; do
-        render_location "$level" "$overflow"
+        render_location "$level"
         [ "$MAX_WIDTH" -eq 0 ] && return
         line=$REPLY
         visible_len "$line"
         overflow=$((REPLY - MAX_WIDTH))
+        # The branch is cut by this level's own overflow, measured with the
+        # full branch: an overflow left over from the level before would cut
+        # it by too little once the worktree and the PR are gone.
+        if [ "$overflow" -gt 0 ] && [ "$level" -ge 4 ]; then
+            render_location "$level" "$overflow"
+            line=$REPLY
+            visible_len "$line"
+            overflow=$((REPLY - MAX_WIDTH))
+        fi
         [ "$overflow" -le 0 ] && break
     done
     REPLY=$line

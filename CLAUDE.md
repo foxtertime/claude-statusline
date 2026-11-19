@@ -2,7 +2,7 @@
 
 Status line for Claude Code: a single bash script that reads the session JSON
 on stdin and prints 2–5 lines (directory + git + pull request; model, context
-bar, session cost, prompt cache and mode indicators; usage limits). User-facing docs, messages and code comments in `install.sh` and
+bar, session cost, prompt cache and mode indicators; usage limits). User-facing docs, messages and code comments in `src/install.sh` and
 `tests/` are in Russian; commit messages are in English.
 
 ## Commands
@@ -20,21 +20,23 @@ The file list is `SHELL_FILES` in the Makefile.
 Try the script by hand:
 
 ```bash
-echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage":25}}' | ./statusline.sh
+echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage":25}}' | src/statusline.sh
 ```
 
 ## Layout
 
-- `statusline.sh` — the product. `read_input` (one jq call) → `read_git` (one
+- `src/statusline.sh` — the product. `read_input` (one jq call) → `read_git` (one
   `git status --porcelain=v2`) → `render_*` → `main`. Holds `VERSION`.
-- `install.sh` — copies the script into the Claude config dir (downloading
-  it from the release and checking `SHA256SUMS` when run without a repo
-  copy), merges `statusLine` and `STATUSLINE_*` options from `--set` into
+- `src/install.sh` — copies the script into the Claude config dir (downloading
+  it from the release and checking `SHA256SUMS` when run outside a repo
+  copy, which it recognises by `src/statusline.sh` + `tests/run.sh`), merges `statusLine` and `STATUSLINE_*` options from `--set` into
   `settings.json`, keeps `STATUSLINE_PADDING` in sync with
   `statusLine.padding`; `--check` diagnoses, `--uninstall` reverses all of it.
   A new `STATUSLINE_*` option must be added to `KNOWN_OPTIONS` there.
 - `tests/run.sh` — black-box tests for both scripts.
 - `.githooks/commit-msg`, `.github/workflows/` — commit lint, CI, release.
+  Release assets are flat (`statusline.sh`, `install.sh`, `SHA256SUMS`): the
+  downloaded installer and its URLs depend on those names, not on `src/`.
 
 ## Rules for statusline.sh
 
@@ -96,6 +98,13 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   commit or PR body with `Closes #<n>` (or `Refs #<n>` if it only partly
   addresses it). Follow-up work you notice but don't do goes into a new issue,
   not a TODO comment.
+- **Assign yourself.** An issue you take into work (or create to work on) and
+  every PR you open are assigned to you: `gh issue create --assignee @me`,
+  `gh issue edit <n> --add-assignee @me`, `gh pr create --assignee @me`.
+- **Tick issue checklists.** If an issue has a checklist (`- [ ]`), tick each
+  item as soon as it is done (`gh issue edit <n> --body-file …`), so the issue
+  shows the real progress; by the time the PR is merged every item it covers
+  is ticked.
 - **Every branch is merged through a pull request.** No local merges into
   `develop` or `main`, and no direct pushes to them — this covers feature,
   release and hotfix branches alike. The flow is: issue → branch → push →
@@ -124,7 +133,7 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   `type(scope): description` — types `feat fix docs refactor perf test build ci
   chore revert`, scopes `statusline install release`, subject ≤ 72 chars, no
   trailing period.
-- **SemVer.** `VERSION` in `statusline.sh` is the single source of truth and a
+- **SemVer.** `VERSION` in `src/statusline.sh` is the single source of truth and a
   test checks it against the newest `CHANGELOG.md` section. Only bump it on a
   release branch.
 - **Merge only when CI is green.** The macOS job runs the system bash 3.2,

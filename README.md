@@ -15,7 +15,7 @@ Weekly  ━━━━━━━━──────────── 41%  4 се
 
 Что показывается:
 
-- **Строка 1** — текущая директория; git-ветка (или короткий хеш в detached HEAD) — ссылкой на ветку на GitHub либо на репозиторий на другом хостинге — с индикаторами: конфликты (`!`), staged (`+`), modified (`~`), untracked (`?`), ahead/behind (`↑`/`↓`), stash (`≡`), имя git worktree (`wt:имя`), открытый pull request ветки с состоянием ревью (`#123 approved`, для GitLab — `!123`) — ссылкой, если терминал их поддерживает, — тема и возраст последнего коммита. Чистое дерево — `[clean]`, вне репозитория — `[no git]`.
+- **Строка 1** — текущая директория — ссылкой `file://`, которая открывает её в файловом менеджере или редакторе; git-ветка (или короткий хеш в detached HEAD) — ссылкой на ветку на GitHub либо на репозиторий на другом хостинге — с индикаторами: конфликты (`!`), staged (`+`), modified (`~`), untracked (`?`), ahead/behind (`↑`/`↓`), stash (`≡`), имя git worktree (`wt:имя`), открытый pull request ветки с состоянием ревью (`#123 approved`, для GitLab — `!123`) — ссылкой, если терминал их поддерживает, — тема и возраст последнего коммита. Чистое дерево — `[clean]`, вне репозитория — `[no git]`.
 - **Строка 2** — модель, размер контекстного окна, уровень effort, отметка `fast` в быстром режиме и `@имя` агента; шкала заполнения контекста с процентом и токенами; сессия: оценка стоимости, длительность и число добавленных и удалённых строк (`$1.24 · 38 мин · +156 −23`). Стоимость — оценка Claude Code по прайс-листу, а не счёт; по подписке она не показывается. В конце — состояние кэша промпта: `Cache 91% · 19:30` — доля чтений из кэша и время, когда он остынет, или `Cache cold`, если следующий запрос будет прочитан заново целиком. Последними идут режим vim (`NORMAL` / `INSERT`) и имя сессии.
 - **Строки 3+** — лимиты использования, по строке на каждое окно, которое передаёт Claude Code:
   - `Current` — 5-часовое окно, `Weekly` — недельное (подписки Pro, Max и Ultra);
@@ -45,8 +45,10 @@ bash install.sh
 
 ```bash
 git clone https://github.com/foxtertime/claude-statusline.git
-cd claude-statusline && ./install.sh
+cd claude-statusline && make install    # или: src/install.sh
 ```
+
+В копии репозитория (её установщик узнаёт по `src/statusline.sh` и `tests/run.sh`) ставится её `src/statusline.sh`; вне её скрипт всегда скачивается и сверяется, даже если рядом с установщиком есть другой `statusline.sh`.
 
 Установщик кладёт скрипт в `~/.claude/statusline.sh` и добавляет в `~/.claude/settings.json`:
 
@@ -56,15 +58,15 @@ cd claude-statusline && ./install.sh
 
 Остальные настройки не затрагиваются, включая соседние поля `statusLine` (`padding`, `refreshInterval`); прежний файл сохраняется в `settings.json.bak`. Если задана переменная `CLAUDE_CONFIG_DIR`, установка идёт в неё.
 
-Обновление: `git pull && ./install.sh` в копии репозитория или повторный запуск скачанного установщика.
+Обновление: `git pull && make install` в копии репозитория или повторный запуск скачанного установщика.
 
-Установщик же задаёт [настройки](#настройка), чтобы не править `settings.json` руками:
+Установщик же задаёт [настройки](#настройка), чтобы не править `settings.json` руками. Примеры ниже — для копии репозитория; скачанный установщик запускается так же: `bash install.sh --set …`.
 
 ```bash
-./install.sh --set STATUSLINE_LANG=ru --set STATUSLINE_HIDE=commit,spend   # опции
-./install.sh --unset STATUSLINE_HIDE                                       # убрать опцию
-./install.sh --refresh 60                                                  # statusLine.refreshInterval; 0 — убрать
-./install.sh --padding 2                                                   # statusLine.padding; 0 — убрать
+src/install.sh --set STATUSLINE_LANG=ru --set STATUSLINE_HIDE=commit,spend   # опции
+src/install.sh --unset STATUSLINE_HIDE                                       # убрать опцию
+src/install.sh --refresh 60                                                  # statusLine.refreshInterval; 0 — убрать
+src/install.sh --padding 2                                                   # statusLine.padding; 0 — убрать
 ```
 
 Опции записываются в блок `env` и применяются после перезапуска Claude Code. Повторная установка их сохраняет. `STATUSLINE_PADDING` установщик всегда выставляет сам по `statusLine.padding`.
@@ -72,13 +74,13 @@ cd claude-statusline && ./install.sh
 Проверить установку — версии `jq` и `git`, `settings.json`, путь к скрипту, пробный запуск, опции:
 
 ```bash
-./install.sh --check
+src/install.sh --check
 ```
 
 Удаление — скрипт, ключ `statusLine` и все опции `STATUSLINE_*`:
 
 ```bash
-./install.sh --uninstall
+src/install.sh --uninstall    # или: make uninstall
 ```
 
 ## Настройка
@@ -116,7 +118,7 @@ cd claude-statusline && ./install.sh
 | `git` | весь git-блок |
 | `commit` | тему и возраст последнего коммита |
 | `pr` | pull request текущей ветки |
-| `links` | кликабельные ссылки (OSC 8); текст остаётся |
+| `links` | кликабельные ссылки (OSC 8) — директория, ветка, pull request; текст остаётся |
 | `worktree` | имя git worktree |
 | `effort` | уровень effort |
 | `fast` | отметку быстрого режима |
@@ -202,7 +204,7 @@ Claude Code перерисовывает статуслайн после соо�
 Запуск вручную на тестовых данных:
 
 ```bash
-echo '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage":25,"context_window_size":200000}}' | ./statusline.sh
+echo '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage":25,"context_window_size":200000}}' | src/statusline.sh
 ```
 
 ## Разработка

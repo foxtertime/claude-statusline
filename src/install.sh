@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Установка, настройка и удаление claude-statusline.
 #
-#   ./install.sh [настройки]      установить или обновить
-#   ./install.sh --check          проверить установку
-#   ./install.sh --uninstall      удалить скрипт и его настройки
+#   install.sh [настройки]        установить или обновить
+#   install.sh --check            проверить установку
+#   install.sh --uninstall        удалить скрипт и его настройки
+#
+# В копии репозитория установщик лежит в src/ (или: make install).
 #
 # Настройки (можно повторять и сочетать):
 #   --set STATUSLINE_X=значение   задать опцию статуслайна
@@ -12,7 +14,7 @@
 #   --padding N                   отступ statusLine.padding (0 — убрать)
 #
 # Каталог настроек берётся из CLAUDE_CONFIG_DIR, по умолчанию ~/.claude.
-# Если рядом с установщиком нет statusline.sh, он скачивается из релиза на
+# Вне копии репозитория statusline.sh скачивается из релиза на
 # GitHub (STATUSLINE_RELEASE=vX.Y.Z, по умолчанию последний) и сверяется с
 # SHA256SUMS того же релиза.
 set -euo pipefail
@@ -22,13 +24,31 @@ DEFAULT_DIR="$HOME/.claude"
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$DEFAULT_DIR}"
 SETTINGS="$CLAUDE_DIR/settings.json"
 TARGET="$CLAUDE_DIR/statusline.sh"
-SOURCE="$(cd "$(dirname "$0")" && pwd)/statusline.sh"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# Копия репозитория узнаётся по src/statusline.sh и tests/run.sh: так
+# statusline.sh, случайно оказавшийся рядом со скачанным установщиком, не
+# ставится без проверки.
+SOURCE=""
+[ -f "$HERE/statusline.sh" ] && [ -f "$HERE/../tests/run.sh" ] && SOURCE="$HERE/statusline.sh"
+# Как запустить установщик снова — для подсказок в сообщениях
+SELF=$0
 
 # Опции, которые принимает --set. STATUSLINE_PADDING не входит: его
 # установщик выставляет сам по statusLine.padding (см. --padding).
-KNOWN_OPTIONS=" LANG BAR_WIDTH WARN CRIT HIDE RESET GIT_CACHE THEME ASCII LAYOUT
+KNOWN_OPTIONS="LANG BAR_WIDTH WARN CRIT HIDE RESET GIT_CACHE THEME ASCII LAYOUT
     COLOR_DIR COLOR_MUTED COLOR_MODEL COLOR_TEXT COLOR_OK COLOR_WARN COLOR_CRIT
-    COLOR_ACCENT "
+    COLOR_ACCENT"
+
+# known_option <KEY> — KEY есть в KNOWN_OPTIONS. Имя сравнивается целиком,
+# поэтому перевод строки в списке и пробел в имени ничего не ломают.
+known_option() {
+    local name
+    case $1 in STATUSLINE_*) ;; *) return 1 ;; esac
+    for name in $KNOWN_OPTIONS; do
+        [ "STATUSLINE_$name" = "$1" ] && return 0
+    done
+    return 1
+}
 
 # В settings.json пишем ~/.claude/..., пока каталог стандартный: такой файл
 # можно переносить между машинами.
@@ -88,9 +108,9 @@ sha256() {
     fi
 }
 
-# fetch_source — если statusline.sh нет рядом, скачать его из релиза
+# fetch_source — вне копии репозитория скачать statusline.sh из релиза
 fetch_source() {
-    [ -f "$SOURCE" ] && return 0
+    [ -n "$SOURCE" ] && return 0
 
     local release=${STATUSLINE_RELEASE:-latest} base
     case $release in
@@ -129,11 +149,7 @@ add_set() {
     [ "$key" != "$1" ] || die "--set: ожидается STATUSLINE_X=значение, получено '$1'"
     [ "$key" = STATUSLINE_PADDING ] &&
         die "STATUSLINE_PADDING выставляется сам по statusLine.padding — используйте --padding"
-    case $KNOWN_OPTIONS in
-        *" ${key#STATUSLINE_} "*) ;;
-        *) die "неизвестная опция '$key'; список — в README" ;;
-    esac
-    case $key in STATUSLINE_*) ;; *) die "неизвестная опция '$key'; список — в README" ;; esac
+    known_option "$key" || die "неизвестная опция '$key'; список — в README"
     SETS=$(jq -n --argjson o "$SETS" --arg k "$key" --arg v "$value" '$o + {($k): $v}')
 }
 
@@ -179,6 +195,7 @@ SETTINGS_FILTER='
 do_install() {
     require_jq
     fetch_source
+    [ "$SOURCE" -ef "$TARGET" ] && die "$SOURCE — это и есть установленный скрипт; запустите установщик из копии репозитория или скачанный отдельно"
 
     mkdir -p "$CLAUDE_DIR"
     local args=(--arg cmd "$COMMAND" --arg refresh "$REFRESH" --arg padding "$PADDING"
@@ -273,7 +290,7 @@ do_check() {
     fi
 
     if [ ! -f "$SETTINGS" ]; then
-        report fail "$SETTINGS не найден — запустите ./install.sh"
+        report fail "$SETTINGS не найден — запустите $SELF"
     elif ! command -v jq >/dev/null 2>&1; then
         :
     elif ! jq empty "$SETTINGS" 2>/dev/null; then
@@ -295,7 +312,7 @@ check_settings() {
     type=$(jq -r '.statusLine.type // ""' "$SETTINGS")
     command=$(jq -r '.statusLine.command // ""' "$SETTINGS")
     if [ -z "$command" ]; then
-        report fail "в $SETTINGS нет statusLine.command — запустите ./install.sh"
+        report fail "в $SETTINGS нет statusLine.command — запустите $SELF"
         return
     fi
     [ "$type" = command ] || report fail "statusLine.type = '$type', ожидается 'command'"
@@ -317,13 +334,13 @@ check_settings() {
 
     local installed
     installed=$("$script" --version 2>/dev/null | cut -d' ' -f2)
-    if [ -f "$SOURCE" ]; then
+    if [ -n "$SOURCE" ]; then
         local available
         available=$("$BASH" "$SOURCE" --version 2>/dev/null | cut -d' ' -f2)
         if [ "$installed" = "$available" ]; then
             report ok "установлена версия $installed"
         else
-            report warn "установлена версия $installed, в этой копии репозитория — $available; обновить: ./install.sh"
+            report warn "установлена версия $installed, в этой копии репозитория — $available; обновить: $SELF"
         fi
     else
         report ok "установлена версия $installed"
@@ -339,17 +356,18 @@ check_settings() {
     local key value
     while IFS=$'\t' read -r key value; do
         [ -n "$key" ] || continue
-        case $KNOWN_OPTIONS in
-            *" ${key#STATUSLINE_} "*) report ok "опция $key=$value" ;;
-            *) [ "$key" = STATUSLINE_PADDING ] || report warn "неизвестная опция $key — статуслайн её не читает" ;;
-        esac
+        if known_option "$key"; then
+            report ok "опция $key=$value"
+        elif [ "$key" != STATUSLINE_PADDING ]; then
+            report warn "неизвестная опция $key — статуслайн её не читает"
+        fi
     done < <(jq -r '(.env // {}) | to_entries[] | select(.key | startswith("STATUSLINE_")) | "\(.key)\t\(.value)"' "$SETTINGS")
 
     local padding env_padding
     padding=$(jq -r '.statusLine.padding // 0' "$SETTINGS")
     env_padding=$(jq -r '.env.STATUSLINE_PADDING // "0"' "$SETTINGS")
     if [ "$padding" != "$env_padding" ]; then
-        report warn "statusLine.padding = $padding, а STATUSLINE_PADDING = $env_padding — строки могут обрезаться; исправит ./install.sh"
+        report warn "statusLine.padding = $padding, а STATUSLINE_PADDING = $env_padding — строки могут обрезаться; исправит $SELF"
     fi
 }
 

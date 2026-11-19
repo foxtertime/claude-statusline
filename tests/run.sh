@@ -11,8 +11,8 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-SCRIPT="$ROOT/statusline.sh"
-INSTALLER="$ROOT/install.sh"
+SCRIPT="$ROOT/src/statusline.sh"
+INSTALLER="$ROOT/src/install.sh"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -310,6 +310,16 @@ git -C "$HOME/work/proj/app" checkout -q -b feature/very-long-branch-name
 equals "$(width 30)" "…/app │ feature/v… [clean]"
 equals "$(width 20)" "…/app │ feature/… [clean]"
 
+t "ширина: ветка не отрастает обратно, когда убираются worktree и PR"
+git init -q -b feature/very-long-branch-name-for-testing-truncation "$TMP/long/app"
+git -C "$TMP/long/app" commit -q --allow-empty -m initial
+touch "$TMP/long/app/new"
+long=$(printf '{"workspace":{"current_dir":"%s"},"worktree":{"name":"wt1"},"pr":{"number":12}}' "$TMP/long/app")
+equals "$(line 1 "$(COLUMNS=34 render "$long")")" "…/app │ feature/very-long-… ?1"
+equals "$(line 1 "$(COLUMNS=30 render "$long")")" "…/app │ feature/very-l… ?1"
+equals "$(line 1 "$(COLUMNS=24 render "$long")")" "…/app │ feature/… ?1"
+equals "$(line 1 "$(COLUMNS=40 render "$long")")" "…/app │ feature/very-… ?1 wt:wt1 #12"
+
 t "ширина: некорректный COLUMNS игнорируется"
 for bad in 0 19 abc 99999; do
     contains "$(width "$bad")" "$tilde/work/proj/app │ feature/very-long-branch-name [clean] │ initial"
@@ -422,12 +432,31 @@ t "ссылки: видимый текст не меняется"
 equals "$(line 1 "$(STATUSLINE_HIDE=commit render "$(with_repo github.com o r)")")" "$REPO │ feature/x [clean]"
 
 t "ссылки: нет repo, небезопасные значения, выключено"
-lacks "$(NO_COLOR='' render "$(in_dir "$REPO")")" "${esc}]8"
-lacks "$(NO_COLOR='' render "$(with_repo github.com 'o r' r)")" "${esc}]8"
-lacks "$(NO_COLOR='' render "$(with_repo github.com o '')")" "${esc}]8"
+lacks "$(NO_COLOR='' render "$(in_dir "$REPO")")" "${esc}]8;;http"
+lacks "$(NO_COLOR='' render "$(with_repo github.com 'o r' r)")" "${esc}]8;;http"
+lacks "$(NO_COLOR='' render "$(with_repo github.com o '')")" "${esc}]8;;http"
 lacks "$(NO_COLOR='' STATUSLINE_HIDE=links render "$(with_repo github.com o r)")" "${esc}]8"
 git -C "$REPO" checkout -q -b 'odd#name'
 contains "$(NO_COLOR='' render "$(with_repo github.com o r)")" "$(osc https://github.com/o/r 'odd#name')"
+
+t "ссылки: директория ведёт на file:// с полным путём"
+host=$(printf '%s' "$HOSTNAME" | LC_ALL=C sed 's/[^A-Za-z0-9.-]//g')
+[ "${host}" = "$HOSTNAME" ] || host=""
+contains "$(NO_COLOR='' render "$(in_dir "${REPO}")")" "$(osc "file://${host}${REPO}" "${REPO}")"
+# на узком экране путь сокращён, а ссылка — на полный путь
+contains "$(NO_COLOR='' COLUMNS=30 render "$(in_dir "${REPO}")")" "]8;;file://${host}${REPO}${bel}…/"
+mkdir -p "${TMP}/a b#c%d/проект"
+contains "$(NO_COLOR='' render "$(in_dir "${TMP}/a b#c%d/проект")")" "]8;;file://${host}${TMP}/a%20b%23c%25d/%D0%BF%D1%80%D0%BE%D0%B5%D0%BA%D1%82${bel}"
+equals "$(line 1 "$(render "$(in_dir "${TMP}/a b#c%d/проект")")")" "${TMP}/a b#c%d/проект │ [no git]"
+
+t "ссылки: директория — управляющие символы кодируются, без ссылки, если путь не абсолютный"
+out=$(NO_COLOR='' render '{"workspace":{"current_dir":"/tmp/x\u001b]0;pwn\u0007y"}}')
+contains "$out" "]8;;file://${host}/tmp/x%1B%5D0%3Bpwn%07y${bel}"
+lacks "$out" "${esc}]0;pwn"
+lacks "$(NO_COLOR='' render '{}')" "${esc}]8"
+lacks "$(NO_COLOR='' render '{"workspace":{"current_dir":"relative"}}')" "${esc}]8"
+lacks "$(NO_COLOR='' STATUSLINE_HIDE=links render "$(in_dir "${REPO}")")" "${esc}]8"
+lacks "$(render "$(in_dir "${REPO}")")" "${esc}]8"
 
 # --- pull request -----------------------------------------------------------
 
@@ -453,7 +482,9 @@ pr='{"number":12,"url":"https://github.com/o/r/pull/12"}'
 contains "$(NO_COLOR='' render "$(with_pr "$pr")")" "${esc}]8;;https://github.com/o/r/pull/12${bel}#12${esc}]8;;${bel}"
 lacks "$(render "$(with_pr "$pr")")" "${esc}]8"
 lacks "$(NO_COLOR='' STATUSLINE_HIDE=links render "$(with_pr "$pr")")" "${esc}]8"
-lacks "$(NO_COLOR='' render "$(with_pr '{"number":12,"url":"javascript:alert(1)"}')")" "${esc}]8"
+out=$(NO_COLOR='' render "$(with_pr '{"number":12,"url":"javascript:alert(1)"}')")
+lacks "$out" "javascript"
+lacks "$out" "${bel}#12"
 
 t "pr: адрес ссылки не учитывается в ширине"
 plain=$(line 1 "$(STATUSLINE_HIDE=commit render "$(with_pr "$pr")")")
@@ -692,7 +723,7 @@ coloured() { NO_COLOR='' "$@" "$BASH" "$SCRIPT" --demo; }
 contains "$(coloured env)" "${esc}[2;37m"
 contains "$(coloured env STATUSLINE_THEME=light)" "${esc}[90m"
 lacks "$(coloured env STATUSLINE_THEME=light)" "${esc}[2;37m"
-contains "$(coloured env STATUSLINE_COLOR_DIR='1;34')" "${esc}[1;34m$tilde/projects/app"
+contains "$(coloured env STATUSLINE_COLOR_DIR='1;34' STATUSLINE_HIDE=links)" "${esc}[1;34m$tilde/projects/app"
 contains "$(coloured env STATUSLINE_COLOR_OK=92)" "${esc}[92m+2"
 contains "$(coloured env STATUSLINE_COLOR_WARN=93)" "${esc}[93m━"
 equals "$(coloured env STATUSLINE_COLOR_DIR='1;34m;rm -rf' STATUSLINE_THEME=bogus)" "$(coloured env)"
@@ -795,6 +826,8 @@ for args in "--set BOGUS=1" "--set STATUSLINE_BOGUS=1" "--set STATUSLINE_LANG" \
     out=$(install $args)
     if [ "$?" -eq 1 ]; then ok; else fail "ожидался код 1: $args" "$out"; fi
 done
+out=$(install --set "STATUSLINE_LANG BAR_WIDTH=1")
+if [ "$?" -eq 1 ]; then ok; else fail "ожидался код 1: имя с пробелом" "$out"; fi
 equals "$(cat "$settings")" "$before"
 
 t "install: --uninstall убирает и опции, чужие env не трогает"
@@ -814,6 +847,7 @@ out=$(install --check)
 equals "$?" "0"
 contains "$out" "[внимание] неизвестная опция STATUSLINE_BOGUS"
 contains "$out" "STATUSLINE_PADDING = 0"
+contains "$out" "исправит $INSTALLER"
 rm "$CLAUDE_CONFIG_DIR/statusline.sh"
 out=$(install --check)
 equals "$?" "1"
@@ -827,13 +861,16 @@ t "install: --set знает все опции статуслайна"
 # shellcheck disable=SC2016  # ищем текст «${STATUSLINE_…» в скрипте
 read_options=$(grep -o '\${STATUSLINE_[A-Z_]*' "$SCRIPT" | sed 's/^\${STATUSLINE_//' | grep -v '^PADDING$' | sort -u)
 roles=$(sed -n 's/^ *for role in \(.*\); do$/\1/p' "$SCRIPT")
-known=" $(sed -n '/^KNOWN_OPTIONS="/,/"$/p' "$INSTALLER" | tr -d '"' | sed 's/^KNOWN_OPTIONS=//' | tr -s ' \n' '  ') "
+export CLAUDE_CONFIG_DIR="$TMP/all-options"
+mkdir -p "$CLAUDE_CONFIG_DIR"
+for option in $read_options $(for role in $roles; do echo "COLOR_$role"; done); do
+    if out=$(install --set "STATUSLINE_$option=1"); then ok; else fail "--set STATUSLINE_$option отклонён" "$out"; fi
+done
+out=$(install --check)
 for option in $read_options; do
-    contains "$known" " $option "
+    contains "$out" "опция STATUSLINE_$option=1"
 done
-for role in $roles; do
-    contains "$known" " COLOR_$role "
-done
+lacks "$out" "неизвестная опция"
 
 t "install: без копии репозитория скачивает релиз и сверяет SHA256SUMS"
 release="$TMP/release" standalone="$TMP/standalone"
@@ -854,6 +891,32 @@ contains "$out" "контрольная сумма"
 if [ -e "$CLAUDE_CONFIG_DIR" ]; then fail "при неверной сумме что-то записано"; else ok; fi
 out=$(STATUSLINE_RELEASE=main "$BASH" "$standalone/install.sh" 2>&1)
 equals "$?" "1"
+
+t "install: чужой statusline.sh рядом с установщиком не ставится без проверки"
+cp "$SCRIPT" "$release/statusline.sh" # вернуть файл после проверки подмены
+printf '#!/bin/sh\necho "claude-statusline 0.0-stale"\n' >"$standalone/statusline.sh"
+export CLAUDE_CONFIG_DIR="$TMP/stale"
+out=$(STATUSLINE_DOWNLOAD_BASE="file://$release" "$BASH" "$standalone/install.sh" 2>&1)
+equals "$?" "0"
+if cmp -s "$SCRIPT" "$CLAUDE_CONFIG_DIR/statusline.sh"; then ok; else fail "установлен не скачанный файл" "$out"; fi
+lacks "$out" "0.0-stale"
+
+t "install: запуск из каталога настроек"
+cp "$INSTALLER" "$CLAUDE_CONFIG_DIR/install.sh"
+before=$(cat "$CLAUDE_CONFIG_DIR/settings.json")
+out=$(STATUSLINE_DOWNLOAD_BASE="file://$release" "$BASH" "$CLAUDE_CONFIG_DIR/install.sh" 2>&1)
+equals "$?" "0"
+lacks "$out" "same file"
+equals "$(cat "$CLAUDE_CONFIG_DIR/settings.json")" "$before"
+
+t "install: каталог настроек — сама копия репозитория"
+mkdir -p "$TMP/repo-copy/tests" "$TMP/repo-copy/src"
+cp "$INSTALLER" "$SCRIPT" "$TMP/repo-copy/src/" && touch "$TMP/repo-copy/tests/run.sh"
+export CLAUDE_CONFIG_DIR="$TMP/repo-copy/src"
+out=$("$BASH" "$CLAUDE_CONFIG_DIR/install.sh" 2>&1)
+equals "$?" "1"
+contains "$out" "это и есть установленный скрипт"
+if [ -e "$CLAUDE_CONFIG_DIR/settings.json" ]; then fail "settings.json создан"; else ok; fi
 
 # ----------------------------------------------------------------------------
 
