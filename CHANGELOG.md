@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Исправлено
+- `--demo` больше не показывает `?` и пустые сегменты, когда в `HOME` есть кавычка или обратная косая черта ([#53](https://github.com/foxtertime/claude-statusline/issues/53)).
 - Имена в `STATUSLINE_LAYOUT` больше не раскрываются как шаблоны файлов: `*` или `?` в раскладке не зависят от содержимого текущего каталога ([#52](https://github.com/foxtertime/claude-statusline/issues/52)).
 - Огромные числа во входе (`1e300`) больше не завершают скрипт с ошибкой и обрезанным выводом: значения больше 10¹⁵ по модулю отбрасываются ([#45](https://github.com/foxtertime/claude-statusline/issues/45)).
 - Поле входа неожиданного типа (например, строка вместо объекта `model` или `context_window`) больше не стирает весь статуслайн: пропадает только оно само ([#44](https://github.com/foxtertime/claude-statusline/issues/44)).

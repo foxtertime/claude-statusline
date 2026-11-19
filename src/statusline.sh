@@ -566,12 +566,18 @@ set_now() {
 # Timestamps are relative to now so the reset times stay meaningful.
 demo_json() {
     set_now
+    # HOME goes into a JSON string: escape what would end or break it.
+    local home=${HOME:-/home/user}
+    home=${home//\\/\\\\}
+    home=${home//\"/\\\"}
+    home=${home//$'\n'/\\n}
+    home=${home//$'\t'/\\t}
     printf '%s' "{
         \"session_id\": \"demo\",
         \"session_name\": \"refactor auth middleware\",
         \"model\": {\"id\": \"claude-opus-5-5\", \"display_name\": \"Opus 5.5\"},
         \"workspace\": {
-            \"current_dir\": \"${HOME:-/home/user}/projects/app\",
+            \"current_dir\": \"${home}/projects/app\",
             \"git_worktree\": \"auth\",
             \"repo\": {\"host\": \"github.com\", \"owner\": \"example\", \"name\": \"app\"}
         },

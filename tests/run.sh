@@ -114,6 +114,13 @@ contains "$(STATUSLINE_RESET=relative demo)" "in 2h 10m"
 equals "$(STATUSLINE_HIDE=git demo | sed -n 1p)" "$tilde/projects/app"
 lacks "$(demo)" "$esc"
 
+t "демо: кавычка и обратная косая черта в HOME не ломают JSON"
+for home in "$TMP/a\"b" "$TMP/a\\b"; do
+    out=$(HOME=$home demo)
+    equals "$(line 1 "$out" | cut -d' ' -f1)" "$tilde/projects/app"
+    contains "$out" "Opus 5.5"
+done
+
 t "демо: ширина терминала"
 out=$(COLUMNS=60 demo)
 equals "$(line 1 "$out")" "…/app │ feature/auth +2 ~1 ?3 ↑1 ≡1 wt:auth #42 approved"
