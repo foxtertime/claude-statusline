@@ -310,6 +310,16 @@ git -C "$HOME/work/proj/app" checkout -q -b feature/very-long-branch-name
 equals "$(width 30)" "…/app │ feature/v… [clean]"
 equals "$(width 20)" "…/app │ feature/… [clean]"
 
+t "ширина: ветка не отрастает обратно, когда убираются worktree и PR"
+git init -q -b feature/very-long-branch-name-for-testing-truncation "$TMP/long/app"
+git -C "$TMP/long/app" commit -q --allow-empty -m initial
+touch "$TMP/long/app/new"
+long=$(printf '{"workspace":{"current_dir":"%s"},"worktree":{"name":"wt1"},"pr":{"number":12}}' "$TMP/long/app")
+equals "$(line 1 "$(COLUMNS=34 render "$long")")" "…/app │ feature/very-long-… ?1"
+equals "$(line 1 "$(COLUMNS=30 render "$long")")" "…/app │ feature/very-l… ?1"
+equals "$(line 1 "$(COLUMNS=24 render "$long")")" "…/app │ feature/… ?1"
+equals "$(line 1 "$(COLUMNS=40 render "$long")")" "…/app │ feature/very-… ?1 wt:wt1 #12"
+
 t "ширина: некорректный COLUMNS игнорируется"
 for bad in 0 19 abc 99999; do
     contains "$(width "$bad")" "$tilde/work/proj/app │ feature/very-long-branch-name [clean] │ initial"
