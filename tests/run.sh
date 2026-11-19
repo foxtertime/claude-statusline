@@ -795,6 +795,8 @@ for args in "--set BOGUS=1" "--set STATUSLINE_BOGUS=1" "--set STATUSLINE_LANG" \
     out=$(install $args)
     if [ "$?" -eq 1 ]; then ok; else fail "ожидался код 1: $args" "$out"; fi
 done
+out=$(install --set "STATUSLINE_LANG BAR_WIDTH=1")
+if [ "$?" -eq 1 ]; then ok; else fail "ожидался код 1: имя с пробелом" "$out"; fi
 equals "$(cat "$settings")" "$before"
 
 t "install: --uninstall убирает и опции, чужие env не трогает"
@@ -827,13 +829,16 @@ t "install: --set знает все опции статуслайна"
 # shellcheck disable=SC2016  # ищем текст «${STATUSLINE_…» в скрипте
 read_options=$(grep -o '\${STATUSLINE_[A-Z_]*' "$SCRIPT" | sed 's/^\${STATUSLINE_//' | grep -v '^PADDING$' | sort -u)
 roles=$(sed -n 's/^ *for role in \(.*\); do$/\1/p' "$SCRIPT")
-known=" $(sed -n '/^KNOWN_OPTIONS="/,/"$/p' "$INSTALLER" | tr -d '"' | sed 's/^KNOWN_OPTIONS=//' | tr -s ' \n' '  ') "
+export CLAUDE_CONFIG_DIR="$TMP/all-options"
+mkdir -p "$CLAUDE_CONFIG_DIR"
+for option in $read_options $(for role in $roles; do echo "COLOR_$role"; done); do
+    if out=$(install --set "STATUSLINE_$option=1"); then ok; else fail "--set STATUSLINE_$option отклонён" "$out"; fi
+done
+out=$(install --check)
 for option in $read_options; do
-    contains "$known" " $option "
+    contains "$out" "опция STATUSLINE_$option=1"
 done
-for role in $roles; do
-    contains "$known" " COLOR_$role "
-done
+lacks "$out" "неизвестная опция"
 
 t "install: без копии репозитория скачивает релиз и сверяет SHA256SUMS"
 release="$TMP/release" standalone="$TMP/standalone"
