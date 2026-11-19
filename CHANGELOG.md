@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Исправлено
+- `install.sh --padding 00` и `--refresh 00` теперь считаются нулём и убирают ключ, как `0`; ведущие нули в числах отбрасываются ([#49](https://github.com/foxtertime/claude-statusline/issues/49)).
 - `--demo` больше не показывает `?` и пустые сегменты, когда в `HOME` есть кавычка или обратная косая черта ([#53](https://github.com/foxtertime/claude-statusline/issues/53)).
 - Имена в `STATUSLINE_LAYOUT` больше не раскрываются как шаблоны файлов: `*` или `?` в раскладке не зависят от содержимого текущего каталога ([#52](https://github.com/foxtertime/claude-statusline/issues/52)).
 - Огромные числа во входе (`1e300`) больше не завершают скрипт с ошибкой и обрезанным выводом: значения больше 10¹⁵ по модулю отбрасываются ([#45](https://github.com/foxtertime/claude-statusline/issues/45)).
