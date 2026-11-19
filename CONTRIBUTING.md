@@ -29,12 +29,13 @@ make fmt     # отформатировать код
 Любая работа начинается с issue и попадает в `develop` или `main` только через pull request — это относится и к feature-, и к release-, и к hotfix-веткам.
 
 ```bash
-gh issue create                              # или найти существующую: gh issue list
+gh issue create --assignee @me               # или найти существующую: gh issue list,
+                                             # и взять её: gh issue edit <номер> --add-assignee @me
 git checkout develop && git pull
 git checkout -b feature/<номер>-<имя>
 # ... изменения, make check, коммиты ...
 git push -u origin feature/<номер>-<имя>
-gh pr create --base develop                  # в описании: Closes #<номер>
+gh pr create --base develop --assignee @me   # в описании: Closes #<номер>
 gh pr checks --watch                         # дождаться CI, включая macOS
 gh pr merge --merge --delete-branch
 gh issue close <номер> --comment "Сделано в #<номер PR>"
@@ -42,6 +43,8 @@ gh issue close <номер> --comment "Сделано в #<номер PR>"
 
 - Сливаем только при зелёном CI и только merge-коммитом (`--merge`), без squash и rebase: ветка должна оставаться видна в истории.
 - Один pull request — одна issue.
+- Issue, взятая в работу, и открытый pull request назначаются на себя (`--assignee @me`).
+- Если в issue есть чек-лист (`- [ ]`), каждый пункт отмечается, как только сделан (`gh issue edit <номер> --body-file …`). К слиянию pull request'а все пункты, которые он закрывает, должны быть отмечены.
 - `Closes #N` закрывает issue автоматически лишь при слиянии в `main`, поэтому после слияния в `develop` issue закрывается вручную.
 
 ## Коммиты — Conventional Commits
