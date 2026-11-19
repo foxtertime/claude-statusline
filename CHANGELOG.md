@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Изменено
+- На bash 3.2 (macOS) узкая строка лимита больше не вызывает `date` повторно: время сброса форматируется один раз на строку ([#54](https://github.com/foxtertime/claude-statusline/issues/54)).
 - Переустановка сохраняет опции, заданные прямо в команде (`"command": "STATUSLINE_LANG=en ~/.claude/statusline.sh"`), а `--check` больше не считает такую команду чужой ([#48](https://github.com/foxtertime/claude-statusline/issues/48)).
 - Установщик сохраняет исходный `settings.json` в `settings.json.orig` при первом изменении и больше его не перезаписывает; `settings.json.bak`, как и раньше, — версия перед последним запуском ([#47](https://github.com/foxtertime/claude-statusline/issues/47)).
 
