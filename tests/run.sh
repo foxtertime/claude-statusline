@@ -569,6 +569,15 @@ rockets='{"model":{"display_name":"M"},"session_name":"🚀🚀🚀🚀🚀🚀�
 equals "$(line 2 "$(COLUMNS=26 render "$rockets")")" "M"
 equals "$(line 2 "$(COLUMNS=28 render "$rockets")")" "M │ 🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀"
 equals "$(line 2 "$(COLUMNS=26 render '{"model":{"display_name":"M"},"session_name":"абвгдежзийклмнопрс"}')")" "M │ абвгдежзийклмнопрс"
+# Эмодзи среди узких символов (U+2300–2BFF) и в U+1F000–1F2FF тоже широкие,
+# а соседние символы без эмодзи-представления — узкие.
+for wide in "⚡✅⌚⭐❌⚡✅⌚⭐❌" "🀄🈁🆎🈚🀄🈁🆎🈚🀄🈁"; do
+    session=$(printf '{"model":{"display_name":"M"},"session_name":"%s"}' "$wide")
+    equals "$(line 2 "$(COLUMNS=26 render "$session")")" "M"
+    equals "$(line 2 "$(COLUMNS=28 render "$session")")" "M │ $wide"
+done
+narrow='{"model":{"display_name":"M"},"session_name":"☀☂✓✔➜⬆♥⚠✈❤"}'
+equals "$(line 2 "$(COLUMNS=18 render "$narrow")")" "M │ ☀☂✓✔➜⬆♥⚠✈❤"
 
 t "ширина: строки лимитов теряют примечание, время сброса, затем укорачивают шкалу"
 spend='{"rate_limits":{"spend_limit":{"used_percentage":86,"resets_at":1741635000,"used_usd":430,"limit_usd":500}}}'
