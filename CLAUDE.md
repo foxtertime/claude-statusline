@@ -96,6 +96,13 @@ echo '{"workspace":{"current_dir":"'"$PWD"'"},"context_window":{"used_percentage
   commit or PR body with `Closes #<n>` (or `Refs #<n>` if it only partly
   addresses it). Follow-up work you notice but don't do goes into a new issue,
   not a TODO comment.
+- **Assign yourself.** An issue you take into work (or create to work on) and
+  every PR you open are assigned to you: `gh issue create --assignee @me`,
+  `gh issue edit <n> --add-assignee @me`, `gh pr create --assignee @me`.
+- **Tick issue checklists.** If an issue has a checklist (`- [ ]`), tick each
+  item as soon as it is done (`gh issue edit <n> --body-file …`), so the issue
+  shows the real progress; by the time the PR is merged every item it covers
+  is ticked.
 - **Every branch is merged through a pull request.** No local merges into
   `develop` or `main`, and no direct pushes to them — this covers feature,
   release and hotfix branches alike. The flow is: issue → branch → push →
