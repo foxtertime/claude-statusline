@@ -688,6 +688,11 @@ equals "$(line 2 "$(layout 'cache,context')" | sed 's/ │ /|/g' | cut -d'|' -f2
     "$(line 2 "$(demo)" | sed 's/ │ /|/g' | awk -F'|' '{print $4 "|" $2 "|" $3 "|" $5 "|" $6}')"
 contains "$(line 2 "$(layout 'session')")" "@reviewer │ refactor auth middleware │ Ctx "
 
+t "раскладка: имена не раскрываются как шаблоны файлов"
+mkdir -p "$TMP/globdir" && : >"$TMP/globdir/context"
+equals "$(cd "$TMP/globdir" && layout '*/cost')" "$(layout 'cost')"
+equals "$(cd "$TMP/globdir" && layout 'cont?xt')" "$(demo)"
+
 t "раскладка: / переносит сегменты на отдельную строку перед лимитами"
 out=$(layout 'context,cost/cache,vim,session')
 equals "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "6"

@@ -120,12 +120,15 @@ parse_layout() {
     while :; do
         group=${spec%%/*}
         list=""
+        # Word splitting only: a name like "*" must not match files.
+        set -f
         for name in ${group//,/ }; do
             case " $LINE2_SEGMENTS " in *" $name "*) ;; *) continue ;; esac
             case $seen in *" $name "*) continue ;; esac
             seen="${seen}${name} "
             list="${list:+$list }$name"
         done
+        set +f
         [ -n "$list" ] && groups+=("$list")
         [ "$group" = "$spec" ] && break
         spec=${spec#*/}
