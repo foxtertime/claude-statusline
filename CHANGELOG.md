@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-11-19
+
 ### Добавлено
 - Текущая директория в строке 1 — кликабельная ссылка `file://` на полный путь: терминалы с поддержкой OSC 8 открывают её в файловом менеджере или редакторе. В ссылке есть имя хоста, чтобы по SSH терминал не открыл одноимённую папку на своей машине. Отключается вместе с остальными ссылками: `STATUSLINE_HIDE=links` или `NO_COLOR` ([#71](https://github.com/foxtertime/claude-statusline/issues/71)).
 
@@ -99,7 +101,8 @@
 - Установщик `install.sh`: копирует скрипт в `~/.claude/statusline.sh`, прописывает `statusLine` в `settings.json` с бэкапом; `git` — опциональная зависимость.
 - Флаг `--version` / `-v` у скрипта.
 
-[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/foxtertime/claude-statusline/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/foxtertime/claude-statusline/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/foxtertime/claude-statusline/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/foxtertime/claude-statusline/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/foxtertime/claude-statusline/compare/v1.1.0...v1.1.1
