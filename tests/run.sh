@@ -389,7 +389,7 @@ done
 
 t "ширина: строка 2 теряет сегменты с конца, цвета не считаются"
 equals "$(line 2 "$(COLUMNS=64 render "$full")")" "M (200K) (high) │ Ctx ━━━━━━━━━━────────── 50% (100K / 200K)"
-equals "$(line 2 "$(COLUMNS=63 render "$full")")" "M (200K) (high)"
+equals "$(line 2 "$(COLUMNS=63 render "$full")")" "M (200K) (high) │ Ctx ━━━━━━━━━━────────── 50%"
 contains "$(line 2 "$(COLUMNS=64 NO_COLOR='' render "$full")")" "100K / 200K"
 
 # --- стоимость сессии -------------------------------------------------------
@@ -608,12 +608,25 @@ for c in 40 50 60 80 120; do
 done
 
 t "ширина: сегмент модели теряет агента, fast и effort последними"
-head='{"model":{"display_name":"Opus"},"effort":{"level":"high"},"fast_mode":true,"agent":{"name":"rev"},"context_window":{"used_percentage":5}}'
+head='{"model":{"display_name":"Opus"},"effort":{"level":"high"},"fast_mode":true,"agent":{"name":"rev"},"session_name":"a long session name"}'
 equals "$(line 2 "$(COLUMNS=30 render "$head")")" "Opus (high) fast @rev"
 equals "$(line 2 "$(COLUMNS=24 render "$head")")" "Opus (high) fast"
 equals "$(line 2 "$(COLUMNS=20 STATUSLINE_PADDING=1 render "$head")")" "Opus (high)"
 equals "$(line 2 "$(COLUMNS=20 STATUSLINE_PADDING=3 render "$head")")" "Opus"
-equals "$(line 2 "$(render "$head")")" "Opus (high) fast @rev │ Ctx ━─────────────────── 5%"
+
+t "ширина: шкала контекста сжимается, прежде чем пропасть"
+# Сначала уходят токены, затем агент, fast и effort, затем шкала укорачивается
+# до 5 клеток; только потом сегмент контекста убирается.
+ctx='{"model":{"display_name":"Opus"},"effort":{"level":"high"},"fast_mode":true,"agent":{"name":"rev"},"context_window":{"used_percentage":50,"total_input_tokens":100000,"context_window_size":200000},"session_name":"s"}'
+ctx_at() { line 2 "$(COLUMNS=$1 render "$ctx")"; }
+equals "$(ctx_at 80)" "Opus (200K) (high) fast @rev │ Ctx ━━━━━━━━━━────────── 50% (100K / 200K)"
+equals "$(ctx_at 70)" "Opus (200K) (high) fast @rev │ Ctx ━━━━━━━━━━────────── 50%"
+equals "$(ctx_at 60)" "Opus (200K) (high) fast │ Ctx ━━━━━━━━━━────────── 50%"
+equals "$(ctx_at 46)" "Opus (200K) │ Ctx ━━━━━━━━━━────────── 50%"
+equals "$(ctx_at 35)" "Opus (200K) │ Ctx ━━━━━──── 50%"
+equals "$(ctx_at 31)" "Opus (200K) │ Ctx ━━━── 50%"
+equals "$(ctx_at 30)" "Opus (200K) (high) fast"
+equals "$(STATUSLINE_HIDE=tokens ctx_at 66)" "Opus (200K) (high) fast @rev │ Ctx ━━━━━━━━━━────────── 50%"
 
 t "git: каталог вне репозитория"
 mkdir -p "$TMP/plain"
