@@ -576,6 +576,11 @@ for wide in "⚡✅⌚⭐❌⚡✅⌚⭐❌" "🀄🈁🆎🈚🀄🈁🆎🈚�
     equals "$(line 2 "$(COLUMNS=26 render "$session")")" "M"
     equals "$(line 2 "$(COLUMNS=28 render "$session")")" "M │ $wide"
 done
+# Целые блоки (CJK, хангыль, U+20000+) считаются быстрым путём; узкий U+303F
+# внутри блока CJK — нет: 3 × (1 + 2 + 2 + 2) = 21 колонка.
+blocks='{"model":{"display_name":"M"},"session_name":"〿가丁𠀀〿가丁𠀀〿가丁𠀀"}'
+equals "$(line 2 "$(COLUMNS=28 render "$blocks")")" "M"
+equals "$(line 2 "$(COLUMNS=29 render "$blocks")")" "M │ 〿가丁𠀀〿가丁𠀀〿가丁𠀀"
 narrow='{"model":{"display_name":"M"},"session_name":"☀☂✓✔➜⬆♥⚠✈❤"}'
 equals "$(line 2 "$(COLUMNS=18 render "$narrow")")" "M │ ☀☂✓✔➜⬆♥⚠✈❤"
 
